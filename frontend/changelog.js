@@ -1,8 +1,15 @@
 'use strict';
 
-const APP_VERSION = '0.1.0';
+const APP_VERSION = '0.2.0';
 
 const APP_CHANGELOG = [
+  {
+    version: '0.2.0',
+    date: '2026-08-01',
+    changes: [
+      'Googleアカウントでログインしないと使えないようにしました（許可した本人のアカウントのみ）',
+    ],
+  },
   {
     version: '0.1.0',
     date: '2026-08-01',
