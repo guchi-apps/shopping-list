@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>買い物リスト</title>
+<meta name="theme-color" content="#EDE7DE">
+<meta name="description" content="Notionの買い物リストと同期するPWA">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="買い物リスト">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="app">
+  <header class="app-header">
+    <div class="app-header-row">
+      <div>
+        <h1>買い物リスト</h1>
+        <p class="subtitle">Notionの買い物リストと同期</p>
+      </div>
+      <button type="button" class="version-badge" id="versionBadge"></button>
+    </div>
+  </header>
+
+  <div class="filter-tabs" id="filterTabs"></div>
+
+  <div class="toolbar">
+    <button type="button" class="sort-toggle" id="sortToggle"></button>
+  </div>
+
+  <main class="list" id="list" aria-live="polite"></main>
+
+  <button type="button" class="fab" id="fabAdd" aria-label="アイテムを追加">＋</button>
+</div>
+
+<div class="sheet-overlay" id="addOverlay" hidden>
+  <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="addTitle">
+    <div class="sheet-header">
+      <h2 id="addTitle">アイテムを追加</h2>
+      <button type="button" class="sheet-close" id="addClose" aria-label="閉じる">×</button>
+    </div>
+    <input type="text" class="input" id="addName" placeholder="アイテム名を入力" maxlength="200">
+    <input type="text" class="input" id="addMemo" placeholder="メモ（例：2個）" maxlength="200">
+    <div class="field-label">カテゴリ</div>
+    <div class="chip-group" id="addCategoryChips"></div>
+    <div class="field-label">優先度</div>
+    <div class="chip-group" id="addPriorityChips"></div>
+    <button type="button" class="btn-primary" id="addSubmit">追加する</button>
+  </div>
+</div>
+
+<div class="sheet-overlay" id="editOverlay" hidden>
+  <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="editTitle">
+    <div class="sheet-header">
+      <h2 id="editTitle">アイテムを編集</h2>
+      <button type="button" class="sheet-close" id="editClose" aria-label="閉じる">×</button>
+    </div>
+    <input type="text" class="input" id="editName" placeholder="アイテム名を入力" maxlength="200">
+    <input type="text" class="input" id="editMemo" placeholder="メモ（例：2個）" maxlength="200">
+    <div class="field-label">カテゴリ</div>
+    <div class="chip-group" id="editCategoryChips"></div>
+    <div class="field-label">優先度</div>
+    <div class="chip-group" id="editPriorityChips"></div>
+    <div class="sheet-actions">
+      <button type="button" class="btn-danger" id="editDelete">削除</button>
+      <button type="button" class="btn-primary" id="editSave">保存する</button>
+    </div>
+  </div>
+</div>
+
+<div class="sheet-overlay" id="changelogOverlay" hidden>
+  <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="changelogTitle">
+    <div class="sheet-header">
+      <h2 id="changelogTitle">更新履歴</h2>
+      <button type="button" class="sheet-close" id="changelogClose" aria-label="閉じる">×</button>
+    </div>
+    <div id="changelogList" class="changelog-list"></div>
+  </div>
+</div>
+
+<div class="toast" id="toast" hidden></div>
+
+<script src="changelog.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

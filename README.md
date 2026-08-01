@@ -1,0 +1,103 @@
+# 買い物リスト
+
+Notionの「🛒 買い物リスト」データベースと同期するPWA。スマホのホーム画面に追加して、Notionのデータをその場で見る・チェックする・追加する用途を想定しています。
+
+- フロントエンド: Vanilla JS PWA（ビルド不要、`frontend/`）
+- バックエンド: Node.js（`node:http`のみ、依存パッケージなし、`backend/`）。Notion API用の薄いプロキシで、DBは持たずNotionを唯一の情報源とする
+- 本番ポート: `3101`（PM2）
+
+構成・運用ルールは [m-guchi/docs](https://github.com/m-guchi/docs) の設計ガイドに準拠しています。
+
+## Notionデータとのマッピング
+
+| アプリ側 | Notionプロパティ |
+|---|---|
+| name | 項目（title） |
+| category | カテゴリ（select: 食品/消耗品/日用品/趣味/その他） |
+| memo | メモ（rich_text） |
+| priority | 優先度（select: 高/中/低/未設定） |
+| bought | 購入済み（checkbox） |
+
+## ローカル開発
+
+事前に1Password CLI（`op`）にログインしていること、Notion Integrationのトークンが `apps/shopping-list/notion-token` に登録済みであることが前提です（下記チェックリスト参照）。
+
+```bash
+# 1Passwordからシークレットを注入して起動
+op run --env-file=.env.tpl -- npm run dev
+
+# または .env を生成してから直接起動
+op inject -i .env.tpl -o .env
+npm run dev
+```
+
+`http://localhost:3101` で確認できます。
+
+### 構文チェック
+
+```bash
+npm run check
+```
+
+## バージョン・更新履歴
+
+`package.json` の `version` を上げると、npmのlifecycleフックで `frontend/changelog.js` にスタブが自動挿入されます。
+
+```bash
+npm run version:patch   # 0.1.0 → 0.1.1
+npm run version:minor   # 0.1.0 → 0.2.0
+npm run version:major   # 0.1.0 → 1.0.0
+```
+
+実行後、`frontend/changelog.js` の `changes` の中身を編集してからコミットしてください。リリースコミットのメッセージは `v0.2.0 をリリースする。` のように統一します。
+
+## セットアップ・デプロイ チェックリスト（ユーザー側作業）
+
+このリポジトリのコード・ワークフローは実装済みです。以下は実際に稼働させるために必要な、リポジトリ外の手作業です。
+
+### 1. Notion
+
+- [ ] [notion.so/my-integrations](https://www.notion.so/my-integrations) で新規Integrationを作成
+- [ ] 「🛒 買い物リスト」データベースをそのIntegrationに共有（データベースページ右上の「…」→「接続を追加」）
+- [ ] 発行されたシークレットを1Passwordに登録（次項）
+
+### 2. 1Password（`apps` ボールト）
+
+- [ ] `shopping-list` アイテムを新規作成し、以下のフィールドを追加
+  - `notion-token`: Notion Integrationのシークレット
+  - `target-dir`: VPS上のデプロイ先ディレクトリ（例: `/apps/shopping-list`）
+  - `ci-webhook-url`: Signalyのアプリ用チャンネルのWebhook URL（後述）
+- [ ] 共通アイテム `Server`（`host`/`username`/`ssh-port`）・`githubaction-sshkey`（`private_key`）が既に存在することを確認（他アプリと共通）
+
+### 3. Signaly
+
+- [ ] 「買い物リスト」用の通知チャンネルを作成し、Webhook URLを上記 `ci-webhook-url` に登録
+
+### 4. GitHubリポジトリ
+
+- [ ] リポジトリを作成し、このディレクトリの内容をpush
+- [ ] デフォルトブランチを `develop` に設定
+- [ ] Settings → Secrets and variables → Actions に `OP_SERVICE_ACCOUNT_TOKEN`（`apps`ボールト読み取り権限を持つ1Password Service Account）を登録
+- [ ] `ci.yml` を一度実行してジョブ名をGitHubに認識させる
+- [ ] `main` のBranch protectionを設定（PR必須化 + `lint` ジョブを必須ステータスチェックに追加 + Bypassは自分のアカウントを *For pull requests only*）
+
+### 5. VPS
+
+- [ ] `/apps/shopping-list/` ディレクトリを作成（`target-dir` と一致させる）
+- [ ] 初回のみ手動で `deploy.tar.gz` 相当のファイル一式を配置するか、`workflow_dispatch` でdeploy.ymlを手動実行
+- [ ] PM2の自動起動設定（`pm2 startup && pm2 save`）が済んでいることを確認（他アプリと共通、通常は設定済み）
+
+### 6. Apache（サブドメイン + HTTPS）
+
+`m-guchi/docs` の `guides/apache-domain-setup.md` の手順に従う:
+
+1. DNSにサブドメイン（例: `shopping.gucchii.com`）のAレコードを登録し、反映を確認
+2. `:80` のみのVirtualHostを作成し、`127.0.0.1:3101` へ `ProxyPass`/`ProxyPassReverse`
+3. `a2ensite` → `apache2ctl configtest` → `systemctl reload apache2`
+4. `sudo certbot --apache` で `:443` を追記（**証明書取得前に`:443`ブロックをsites-enabledへ置かないこと**）
+5. `curl`・ブラウザで動作確認
+
+### 7. 完了後
+
+- [ ] `main` へのデプロイでPWAが実機（iPhone）にインストールできるか確認
+- [ ] [m-guchi/vps](https://github.com/m-guchi/vps#アプリ一覧) の README にあるアプリ一覧に追加
