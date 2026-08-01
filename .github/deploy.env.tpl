@@ -11,5 +11,10 @@ TARGET_DIR=op://apps/shopping-list/target-dir
 # Notion API（アプリ固有）
 NOTION_TOKEN=op://apps/shopping-list/notion-token
 
+# 認証（Supabase Auth + Google、複数アプリ共通プロジェクト）
+SUPABASE_URL=op://apps/Supabase/project-url
+SUPABASE_PUBLISHABLE_KEY=op://apps/Supabase/publishable-key
+ALLOWED_GOOGLE_EMAILS=op://apps/shopping-list/allowed-google-emails
+
 # CI / デプロイ通知（Signaly）
 SIGNALY_WEBHOOK_URL=op://apps/shopping-list/ci-webhook-url

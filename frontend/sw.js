@@ -8,6 +8,7 @@ const APP_SHELL = [
   './index.html',
   './style.css',
   './app.js',
+  './auth.js',
   './changelog.js',
   './manifest.webmanifest',
   './icons/icon-192.png',
@@ -38,6 +39,8 @@ self.addEventListener('fetch', (event) => {
 
   const url = new URL(request.url);
   if (url.origin !== self.location.origin) return;
+
+  if (url.pathname.includes('/auth/')) return;
 
   if (url.pathname.endsWith('/api/items')) {
     event.respondWith(staleWhileRevalidate(request));
