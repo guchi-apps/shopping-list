@@ -32,8 +32,26 @@ jobs:
       - name: Validate manifest JSON
         run: node -e "JSON.parse(require('fs').readFileSync('frontend/manifest.webmanifest', 'utf8'))"
 
+  version-check:
+    if: github.event_name == 'pull_request' && github.base_ref == 'main'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: タグの重複チェック
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          TAG="v${VERSION}"
+          if git ls-remote --exit-code --tags origin "refs/tags/${TAG}" > /dev/null 2>&1; then
+            echo "::error::タグ ${TAG} は既に存在します。main へマージすると deploy.yml の tag ジョブが失敗します。package.json の version を上げてから（npm run version:patch 等）マージしてください。"
+            exit 1
+          fi
+          echo "タグ ${TAG} は未使用です。"
+
   notify:
-    needs: [lint]
+    needs: [lint, version-check]
     if: always()
     runs-on: ubuntu-latest
 
@@ -45,14 +63,20 @@ jobs:
         id: status
         run: |
           lint="${{ needs.lint.result }}"
-          if [ "$lint" = "success" ]; then
+          version_check="${{ needs.version-check.result }}"
+          if [ "$lint" = "success" ] && [ "$version_check" != "failure" ]; then
             result=success
-          elif [ "$lint" = "cancelled" ]; then
+          elif [ "$lint" = "cancelled" ] || [ "$version_check" = "cancelled" ]; then
             result=cancelled
           else
             result=failure
           fi
           echo "result=$result" >> "$GITHUB_OUTPUT"
+          if [ "$result" = "success" ]; then
+            echo "jobs=lint, version-check" >> "$GITHUB_OUTPUT"
+          else
+            echo "jobs=lint: $lint, version-check: $version_check" >> "$GITHUB_OUTPUT"
+          fi
           # develop push: failure only. main PR: success, failure, and cancelled.
           if [ "$result" = "failure" ]; then
             echo "should_notify=true" >> "$GITHUB_OUTPUT"
@@ -78,5 +102,5 @@ jobs:
           NOTIFY_APP: 買い物リスト
           NOTIFY_KIND: CI
           NOTIFY_STATUS: ${{ steps.status.outputs.result }}
-          NOTIFY_JOB: lint
+          NOTIFY_JOB: ${{ steps.status.outputs.jobs }}
         run: bash .github/scripts/signaly-notify.sh
