@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ログイン処理中…</title>
+</head>
+<body>
+<p>ログイン処理中です…</p>
+<script src="../auth.js"></script>
+<script>
+(async () => {
+  // PKCE flow（?code=...）で返ってきた場合のみ明示的に交換する。
+  // このプロジェクトの通常のGoogleログインはimplicit flow（#access_token=...）で返るため、
+  // supabase-js標準の自動検出（detectSessionInUrl）に任せ、下のgetSession()で待ち受ける。
+  const code = new URLSearchParams(window.location.search).get('code');
+  if (code) {
+    const { error } = await ShoppingListAuth.exchangeCodeForSession(code);
+    if (error) {
+      window.location.replace('../?authError=forbidden');
+      return;
+    }
+  }
+
+  const session = await ShoppingListAuth.getSession();
+  window.location.replace(session ? '../' : '../?authError=forbidden');
+})();
+</script>
+</body>
+</html>

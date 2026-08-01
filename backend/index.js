@@ -4,11 +4,33 @@ const http = require('node:http');
 const fs = require('node:fs');
 const path = require('node:path');
 const notion = require('./notion');
+const { createVerifier } = require('./auth');
 
 const PORT = Number(process.env.PORT) || 3101;
 const NOTION_TOKEN = process.env.NOTION_TOKEN || '';
 const NOTION_DATA_SOURCE_ID =
   process.env.NOTION_DATA_SOURCE_ID || 'e011508b-b1b2-47aa-a604-178bf64158b8';
+
+const SUPABASE_URL = process.env.SUPABASE_URL || '';
+const SUPABASE_PUBLISHABLE_KEY = process.env.SUPABASE_PUBLISHABLE_KEY || '';
+const ALLOWED_GOOGLE_EMAILS = new Set(
+  (process.env.ALLOWED_GOOGLE_EMAILS || '')
+    .split(',')
+    .map((e) => e.trim().toLowerCase())
+    .filter(Boolean)
+);
+
+const authVerifier = createVerifier({ supabaseUrl: SUPABASE_URL, allowedEmails: ALLOWED_GOOGLE_EMAILS });
+
+async function requireAuth(req) {
+  const match = (req.headers.authorization || '').match(/^Bearer (.+)$/);
+  if (!match) {
+    const err = new Error('認証が必要です');
+    err.status = 401;
+    throw err;
+  }
+  return authVerifier.verify(match[1]);
+}
 
 const FRONTEND_DIR = path.join(__dirname, '..', 'frontend');
 
@@ -63,6 +85,19 @@ function validatePriority(priority) {
 }
 
 async function handleApi(req, res, pathname) {
+  if (pathname === '/api/config' && req.method === 'GET') {
+    return sendJson(res, 200, {
+      supabaseUrl: SUPABASE_URL,
+      supabasePublishableKey: SUPABASE_PUBLISHABLE_KEY,
+    });
+  }
+
+  try {
+    await requireAuth(req);
+  } catch (err) {
+    return sendJson(res, err.status || 401, { error: err.message });
+  }
+
   const itemMatch = pathname.match(/^\/api\/items\/([^/]+)$/);
 
   if (pathname === '/api/items' && req.method === 'GET') {
@@ -113,6 +148,7 @@ async function handleApi(req, res, pathname) {
 
 function serveStatic(req, res, pathname) {
   let relPath = pathname === '/' ? '/index.html' : pathname;
+  if (relPath === '/auth/callback') relPath = '/auth/callback.html';
   relPath = relPath.split('?')[0];
   const resolved = path.normalize(path.join(FRONTEND_DIR, relPath));
 

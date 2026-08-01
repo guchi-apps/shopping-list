@@ -15,13 +15,23 @@
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
-<div class="app">
+<div class="login-screen" id="loginScreen" hidden>
+  <div class="login-card">
+    <h1>買い物リスト</h1>
+    <p class="login-message">Googleアカウントでログインしてください</p>
+    <button type="button" class="btn-primary" id="loginButton">Googleでログイン</button>
+    <p class="login-error" id="loginError" hidden></p>
+  </div>
+</div>
+
+<div class="app" id="appRoot" hidden>
   <header class="app-header">
     <div class="app-header-row">
       <div>
         <h1>買い物リスト</h1>
         <p class="subtitle">Notionの買い物リストと同期</p>
       </div>
+      <button type="button" class="logout-button" id="logoutButton" hidden>ログアウト</button>
       <button type="button" class="version-badge" id="versionBadge"></button>
     </div>
   </header>
@@ -85,6 +95,7 @@
 <div class="toast" id="toast" hidden></div>
 
 <script src="changelog.js"></script>
+<script src="auth.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

@@ -16,6 +16,11 @@ const state = {
 };
 
 const el = {
+  loginScreen: document.getElementById('loginScreen'),
+  loginButton: document.getElementById('loginButton'),
+  loginError: document.getElementById('loginError'),
+  appRoot: document.getElementById('appRoot'),
+  logoutButton: document.getElementById('logoutButton'),
   filterTabs: document.getElementById('filterTabs'),
   sortToggle: document.getElementById('sortToggle'),
   list: document.getElementById('list'),
@@ -50,10 +55,11 @@ function escapeHtml(str) {
 
 // ---- API ----
 async function apiRequest(path, options) {
-  const res = await fetch(path, {
-    headers: { 'Content-Type': 'application/json' },
-    ...options,
-  });
+  const headers = {
+    'Content-Type': 'application/json',
+    ...(await ShoppingListAuth.authHeaders()),
+  };
+  const res = await fetch(path, { headers, ...options });
   if (!res.ok) {
     let message = `リクエストに失敗しました (${res.status})`;
     try {
@@ -62,7 +68,9 @@ async function apiRequest(path, options) {
     } catch {
       // ignore
     }
-    throw new Error(message);
+    const err = new Error(message);
+    err.status = res.status;
+    throw err;
   }
   if (res.status === 204) return null;
   return res.json();
@@ -74,6 +82,40 @@ const createItemApi = (input) =>
 const updateItemApi = (id, input) =>
   apiRequest(`api/items/${id}`, { method: 'PATCH', body: JSON.stringify(input) }).then((d) => d.item);
 const deleteItemApi = (id) => apiRequest(`api/items/${id}`, { method: 'DELETE' });
+
+// ---- auth screens ----
+// 画面の出し分け（showLogin/showApp）とエラーメッセージ表示（setLoginError）は分離する。
+// onAuthStateChangeはsubscribe直後の初回発火やsignOut()呼び出しのたびに再度発火するため、
+// ここで画面切り替えのついでにメッセージまで毎回リセットすると、直前にセットした
+// エラー内容（403の理由など）が即座に空で上書きされてしまう。
+function showLogin() {
+  el.appRoot.hidden = true;
+  el.logoutButton.hidden = true;
+  el.loginScreen.hidden = false;
+}
+
+function showApp() {
+  el.loginScreen.hidden = true;
+  el.loginError.hidden = true;
+  el.appRoot.hidden = false;
+  el.logoutButton.hidden = false;
+}
+
+function setLoginError(message) {
+  if (message) {
+    el.loginError.textContent = message;
+    el.loginError.hidden = false;
+  } else {
+    el.loginError.hidden = true;
+  }
+}
+
+function consumeAuthErrorParam() {
+  const params = new URLSearchParams(window.location.search);
+  if (params.get('authError') !== 'forbidden') return null;
+  history.replaceState({}, '', window.location.pathname);
+  return 'ログインに失敗しました。もう一度お試しください。';
+}
 
 // ---- toast ----
 let toastTimer;
@@ -362,6 +404,19 @@ function closeChangelog() {
 
 // ---- wiring ----
 function bindEvents() {
+  el.loginButton.addEventListener('click', async () => {
+    el.loginButton.disabled = true;
+    const { error } = await ShoppingListAuth.signInWithGoogle();
+    if (error) {
+      setLoginError('Googleログインに失敗しました');
+      el.loginButton.disabled = false;
+    }
+  });
+
+  el.logoutButton.addEventListener('click', () => {
+    ShoppingListAuth.signOut();
+  });
+
   el.sortToggle.addEventListener('click', () => {
     state.sort = state.sort === 'added' ? 'name' : 'added';
     render();
@@ -399,18 +454,55 @@ function registerServiceWorker() {
   }
 }
 
-async function init() {
-  renderVersionBadge();
-  bindEvents();
+async function loadItems() {
+  state.loading = true;
+  state.error = null;
   render();
   try {
     state.items = await fetchItems();
     state.loading = false;
   } catch (err) {
     state.loading = false;
+    if (err.status === 401 || err.status === 403) {
+      await ShoppingListAuth.signOut();
+      showLogin();
+      setLoginError(
+        err.status === 403 ? 'このGoogleアカウントではログインできません' : undefined
+      );
+      return;
+    }
     state.error = err.message || '読み込みに失敗しました';
   }
   render();
+}
+
+async function init() {
+  renderVersionBadge();
+  bindEvents();
+  render();
+
+  const initialAuthError = consumeAuthErrorParam();
+
+  const session = await ShoppingListAuth.getSession();
+  if (session) {
+    showApp();
+    await loadItems();
+  } else {
+    showLogin();
+    setLoginError(initialAuthError);
+  }
+
+  ShoppingListAuth.onAuthStateChange((nextSession, event) => {
+    // INITIAL_SESSION はsubscribe直後に必ず1回発火し、上のgetSession()分岐と重複するため無視する
+    if (event === 'INITIAL_SESSION') return;
+    if (nextSession) {
+      showApp();
+      loadItems();
+    } else {
+      showLogin();
+    }
+  });
+
   registerServiceWorker();
 }
 

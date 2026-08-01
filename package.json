@@ -6,7 +6,7 @@
   "scripts": {
     "start": "node backend/index.js",
     "dev": "node backend/index.js",
-    "check": "node --check backend/index.js && node --check backend/notion.js && node --check frontend/app.js && node --check frontend/changelog.js",
+    "check": "node --check backend/index.js && node --check backend/notion.js && node --check backend/auth.js && node --check frontend/app.js && node --check frontend/auth.js && node --check frontend/changelog.js",
     "version": "node scripts/version-changelog.mjs && git add frontend/changelog.js",
     "version:patch": "npm version patch",
     "version:minor": "npm version minor",

@@ -154,13 +154,16 @@ jobs:
         uses: appleboy/ssh-action@v1
         env:
           NOTION_TOKEN: ${{ env.NOTION_TOKEN }}
+          SUPABASE_URL: ${{ env.SUPABASE_URL }}
+          SUPABASE_PUBLISHABLE_KEY: ${{ env.SUPABASE_PUBLISHABLE_KEY }}
+          ALLOWED_GOOGLE_EMAILS: ${{ env.ALLOWED_GOOGLE_EMAILS }}
           TARGET_DIR: ${{ env.TARGET_DIR }}
         with:
           host: ${{ env.HOST }}
           username: ${{ env.USERNAME }}
           key: ${{ env.SSH_PRIVATE_KEY }}
           port: ${{ env.SSH_PORT }}
-          envs: NOTION_TOKEN,TARGET_DIR
+          envs: NOTION_TOKEN,SUPABASE_URL,SUPABASE_PUBLISHABLE_KEY,ALLOWED_GOOGLE_EMAILS,TARGET_DIR
           script: |
             set -euo pipefail
             cd "${TARGET_DIR}"
@@ -183,6 +186,9 @@ jobs:
             update_env PORT "$PORT"
             update_env NOTION_TOKEN "$NOTION_TOKEN"
             update_env NOTION_DATA_SOURCE_ID "e011508b-b1b2-47aa-a604-178bf64158b8"
+            update_env SUPABASE_URL "$SUPABASE_URL"
+            update_env SUPABASE_PUBLISHABLE_KEY "$SUPABASE_PUBLISHABLE_KEY"
+            update_env ALLOWED_GOOGLE_EMAILS "$ALLOWED_GOOGLE_EMAILS"
 
             echo "Restarting PM2..."
             if command -v pm2 >/dev/null 2>&1; then
