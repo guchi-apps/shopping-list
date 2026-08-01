@@ -5,6 +5,7 @@ Notionの「🛒 買い物リスト」データベースと同期するPWA。ス
 - フロントエンド: Vanilla JS PWA（ビルド不要、`frontend/`）
 - バックエンド: Node.js（`node:http`のみ、依存パッケージなし、`backend/`）。Notion API用の薄いプロキシで、DBは持たずNotionを唯一の情報源とする
 - 本番ポート: `3101`（PM2）
+- 本番URL: `https://gucchii.com/shopping-list/`（新規サブドメインは作らず、portfolioが稼働中のルートドメイン配下にパスとして同居させる。`uptime-kuma-backup`＝`gucchii.com/internal/...` と同じパターン）
 
 構成・運用ルールは [m-guchi/docs](https://github.com/m-guchi/docs) の設計ガイドに準拠しています。
 
@@ -87,15 +88,24 @@ npm run version:major   # 0.1.0 → 1.0.0
 - [ ] 初回のみ手動で `deploy.tar.gz` 相当のファイル一式を配置するか、`workflow_dispatch` でdeploy.ymlを手動実行
 - [ ] PM2の自動起動設定（`pm2 startup && pm2 save`）が済んでいることを確認（他アプリと共通、通常は設定済み）
 
-### 6. Apache（サブドメイン + HTTPS）
+### 6. Apache（既存ドメイン配下にパスとして追加）
 
-`m-guchi/docs` の `guides/apache-domain-setup.md` の手順に従う:
+新規サブドメインは作らず、`gucchii.com`（portfolioの既存VirtualHost、HTTPS設定済み）に `/shopping-list` へのプロキシを追記する形にする（`m-guchi/docs` の `apache-domain-setup.md` にある「既存サイトのパス」パターン、`uptime-kuma-backup` と同じ）。
 
-1. DNSにサブドメイン（例: `shopping.gucchii.com`）のAレコードを登録し、反映を確認
-2. `:80` のみのVirtualHostを作成し、`127.0.0.1:3101` へ `ProxyPass`/`ProxyPassReverse`
-3. `a2ensite` → `apache2ctl configtest` → `systemctl reload apache2`
-4. `sudo certbot --apache` で `:443` を追記（**証明書取得前に`:443`ブロックをsites-enabledへ置かないこと**）
-5. `curl`・ブラウザで動作確認
+1. portfolioの既存VirtualHost設定（`:443`）に以下を追記:
+
+   ```apache
+   # /shopping-list（末尾スラッシュなしは付与してからプロキシする）
+   RedirectMatch ^/shopping-list$ /shopping-list/
+
+   ProxyPass /shopping-list/ http://127.0.0.1:3101/
+   ProxyPassReverse /shopping-list/ http://127.0.0.1:3101/
+   ```
+
+2. `apache2ctl configtest` → `systemctl reload apache2`
+3. `curl`・ブラウザで `https://gucchii.com/shopping-list/` の動作確認
+
+新規DNS登録・certbotでの証明書取得は不要（ルートドメインで既にHTTPS化済みのため）。
 
 ### 7. 完了後
 

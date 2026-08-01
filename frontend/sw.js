@@ -39,12 +39,12 @@ self.addEventListener('fetch', (event) => {
   const url = new URL(request.url);
   if (url.origin !== self.location.origin) return;
 
-  if (url.pathname === '/api/items') {
+  if (url.pathname.endsWith('/api/items')) {
     event.respondWith(staleWhileRevalidate(request));
     return;
   }
 
-  if (url.pathname.startsWith('/api/')) return;
+  if (url.pathname.includes('/api/')) return;
 
   event.respondWith(cacheFirst(request));
 });

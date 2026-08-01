@@ -68,12 +68,12 @@ async function apiRequest(path, options) {
   return res.json();
 }
 
-const fetchItems = () => apiRequest('/api/items').then((d) => d.items);
+const fetchItems = () => apiRequest('api/items').then((d) => d.items);
 const createItemApi = (input) =>
-  apiRequest('/api/items', { method: 'POST', body: JSON.stringify(input) }).then((d) => d.item);
+  apiRequest('api/items', { method: 'POST', body: JSON.stringify(input) }).then((d) => d.item);
 const updateItemApi = (id, input) =>
-  apiRequest(`/api/items/${id}`, { method: 'PATCH', body: JSON.stringify(input) }).then((d) => d.item);
-const deleteItemApi = (id) => apiRequest(`/api/items/${id}`, { method: 'DELETE' });
+  apiRequest(`api/items/${id}`, { method: 'PATCH', body: JSON.stringify(input) }).then((d) => d.item);
+const deleteItemApi = (id) => apiRequest(`api/items/${id}`, { method: 'DELETE' });
 
 // ---- toast ----
 let toastTimer;
