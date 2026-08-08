@@ -49,6 +49,10 @@ const el = {
   changelogOverlay: document.getElementById('changelogOverlay'),
   changelogList: document.getElementById('changelogList'),
   changelogClose: document.getElementById('changelogClose'),
+  confirmOverlay: document.getElementById('confirmOverlay'),
+  confirmMessage: document.getElementById('confirmMessage'),
+  confirmCancel: document.getElementById('confirmCancel'),
+  confirmOk: document.getElementById('confirmOk'),
 };
 
 function escapeHtml(str) {
@@ -144,6 +148,22 @@ function showToast(message) {
   el.toast.hidden = false;
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => { el.toast.hidden = true; }, 2500);
+}
+
+// ---- confirm dialog ----
+let confirmResolve = null;
+function confirmDialog(message) {
+  el.confirmMessage.textContent = message;
+  el.confirmOverlay.hidden = false;
+  return new Promise((resolve) => { confirmResolve = resolve; });
+}
+function closeConfirmDialog(result) {
+  el.confirmOverlay.hidden = true;
+  if (confirmResolve) {
+    const resolve = confirmResolve;
+    confirmResolve = null;
+    resolve(result);
+  }
 }
 
 // ---- sorting ----
@@ -384,7 +404,7 @@ async function submitEditSave() {
 async function submitEditDelete() {
   const id = state.editId;
   if (!id) return;
-  if (!confirm('このアイテムを削除しますか？')) return;
+  if (!(await confirmDialog('このアイテムを削除しますか？'))) return;
   el.editDelete.disabled = true;
   try {
     await deleteItemApi(id);
@@ -472,9 +492,14 @@ function bindEvents() {
   el.changelogClose.addEventListener('click', closeChangelog);
   el.changelogOverlay.addEventListener('click', (e) => { if (e.target === el.changelogOverlay) closeChangelog(); });
 
+  el.confirmCancel.addEventListener('click', () => closeConfirmDialog(false));
+  el.confirmOk.addEventListener('click', () => closeConfirmDialog(true));
+  el.confirmOverlay.addEventListener('click', (e) => { if (e.target === el.confirmOverlay) closeConfirmDialog(false); });
+
   document.addEventListener('keydown', (e) => {
     if (e.key !== 'Escape') return;
-    if (!el.editOverlay.hidden) closeEdit();
+    if (!el.confirmOverlay.hidden) closeConfirmDialog(false);
+    else if (!el.editOverlay.hidden) closeEdit();
     else if (!el.addOverlay.hidden) closeAdd();
     else if (!el.changelogOverlay.hidden) closeChangelog();
     else if (!el.profileMenu.hidden) closeProfileMenu();
