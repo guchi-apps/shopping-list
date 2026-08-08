@@ -45,6 +45,37 @@ GitHub Actions上の無人実行では、その場で確認を取る相手がい
 
 Issueごとの実装エージェントは、`npm version`系コマンド（`npm run version:patch`等）を実行せず、`package.json`のversionフィールドと`frontend/changelog.js`を変更しない。かつては個々の実装コミットでもこれらを更新していたが、上記ワークフローがリリース単位でまとめて生成する方式に一本化したため廃止した（#55）。
 
+## 全アプリ共通の共有知識（shared context）
+
+複数アプリで再利用できる知識は、このリポジトリではなく共有知識リポジトリ（`m-guchi/docs`）で管理する。設計の全体像は`m-guchi/issue-deck`の`docs/shared-knowledge.md`を参照。
+
+### 参照先
+
+- **GitHub Actions実行**: 各ワークフローが実行前に`.shared-context/`へcheckoutする。存在しない場合（checkout失敗時など）は共有知識なしでそのまま作業を進めてよい。
+- **ローカル実行**: `~/apps/_docs`（`scripts/start-issue.sh`・`scripts/start-reviewer.sh`が`--add-dir`で参照可能にする）。
+
+読む順序は、自分の役割の`agent-rules/`（実装エージェントなら`agent-rules/implementation.md`、レビュー・統合エージェントなら`agent-rules/review.md`）→ 必要に応じて`knowledge/`の該当ファイル → 設計判断が要るときだけ`README.md`（アプリ設計ガイド）・`guides/`。最初から全部を読む必要はない。
+
+### 参照の優先順位
+
+内容が矛盾する場合は、具体的で近いものを優先する。
+
+1. Issue本文・コメントでの明示的な指示
+2. このファイル（`CLAUDE.md`）
+3. `.shared-context/CLAUDE.md`・`.shared-context/agent-rules/`
+4. `.shared-context/knowledge/`・`.shared-context/README.md`・`.shared-context/guides/`
+
+共有知識は「他のアプリではこうしている」という既定値であり、shopping-list固有のルールを上書きしない。
+
+### 書き込みの禁止と提案フロー
+
+- `.shared-context/`配下は**読み取り専用**として扱う。編集・`git add`・コミットは一切行わない（`.gitignore`済み）。
+- 実装中に得た知見は、次の基準で置き場所を分ける。**迷った場合はアプリ固有として扱う。**
+  - **アプリ固有**（このリポジトリのコード・画面・Notion連携・ラベル・ワークフローに依存する）→ 実装PRに同梱してこのファイルまたは`README.md`へ書く。
+  - **全アプリ共通**（対象リポジトリを差し替えても内容が成立し、数週間以上有効で、根拠を示せる）→ 共有知識リポジトリへ直接書かず、対応Issueへ「追加提案」コメントを投稿するにとどめる。
+- 提案コメントの書式・審査の4観点（再利用性・正確性・重複・恒久性）・反映までの流れはissue-deckの`docs/shared-knowledge.md`「9. 共有知識更新フロー」を参照。承認された提案のみ、`.github/workflows/shared-knowledge-propose.yml`が共有知識リポジトリへのPull Requestに変換し、最終的なマージは人間が行う。
+- シークレットの実値・個人情報・一時的な障害情報は、アプリ固有・共通のいずれにも記録しない。
+
 ## Issueごとの複数Claude Codeエージェント運用
 
 ### ブランチ運用
@@ -61,10 +92,12 @@ Issueごとの実装エージェントは、`npm version`系コマンド（`npm 
 - 他Issueのブランチ・worktreeの編集
 - 不要なforce push
 - 自分が作成したPull Requestの自己マージ
+- 共有知識リポジトリ（`.shared-context/`・ローカルの`~/apps/_docs`）の編集・コミット
 
 ### レビュー・統合エージェントの禁止事項
 
 - `main`への直接マージ・push
+- 共有知識リポジトリの編集・コミット（反映は`shared-knowledge-propose.yml`がPull Requestを作成し、人間がマージする）
 
 ### 実装前の計画フェーズ（`21.plan-required`ラベル）
 
