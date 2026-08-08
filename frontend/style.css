@@ -78,15 +78,13 @@ input::placeholder { color: rgba(43, 35, 32, 0.35); }
 .logout-button {
   border: none;
   background: none;
-  color: var(--ink-40);
-  font-size: 12px;
+  color: var(--priority-high);
+  font-size: 13px;
   font-weight: 600;
   cursor: pointer;
-  padding: 4px 6px;
-  flex-shrink: 0;
-  align-self: flex-start;
+  text-align: left;
+  padding: 8px 6px;
 }
-.logout-button[hidden] { display: none; }
 
 .app-header { padding: 10px 20px 2px; flex-shrink: 0; }
 .app-header-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
@@ -97,11 +95,55 @@ input::placeholder { color: rgba(43, 35, 32, 0.35); }
   border: none;
   background: none;
   color: var(--ink-40);
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 600;
   cursor: pointer;
-  padding: 4px 6px;
+  text-align: left;
+  padding: 8px 6px;
+}
+
+.profile-wrap { position: relative; flex-shrink: 0; }
+.profile-wrap[hidden] { display: none; }
+
+.profile-button {
+  width: 36px;
+  height: 36px;
+  border-radius: 999px;
+  border: none;
+  background: var(--ink-05);
+  color: var(--ink-45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  padding: 0;
   flex-shrink: 0;
+}
+.profile-button[aria-expanded="true"] { background: var(--ink-10); color: var(--ink); }
+
+.profile-menu {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  min-width: 200px;
+  background: #fff;
+  border-radius: 16px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  z-index: 120;
+}
+.profile-menu[hidden] { display: none; }
+
+.profile-email {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--ink-45);
+  margin: 0 0 4px;
+  padding: 4px 6px 8px;
+  border-bottom: 1px solid var(--ink-10);
+  word-break: break-all;
 }
 
 .filter-tabs {
