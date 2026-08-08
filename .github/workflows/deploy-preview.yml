@@ -6,6 +6,11 @@ name: Deploy Preview
 # preview-environment.md参照）。本リポジトリはNotionが唯一の情報源でDBを持たないため、
 # issue-deck側にある本番DBダンプ・サニタイズ処理は不要。
 #
+# デプロイ先のFly.ioアプリ（fly.tomlのapp名）はissue-deckリポジトリのプレビュー用アプリ
+# （issue-deck-preview）をそのまま共通利用する（m-guchiの指示、#54）。shopping-list専用の
+# Fly.ioアプリは作成しないため、issue-deck側のプレビューデプロイと同じアプリの中身を
+# 取り合う形になる（どちらか後からデプロイした方の内容で上書きされる）。
+#
 # workflow_call化しているのは、claude-issue-dispatch.ymlのdeploy-previewジョブから
 # 呼び出す想定のため。refは省略時developを対象にする。claude-issue-dispatch.ymlは
 # 23.preview-requiredが付いたissueの実装ブランチ（issue-<番号>）をレビュー用に表示したいため、
