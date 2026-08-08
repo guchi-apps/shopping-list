@@ -206,12 +206,29 @@ PY
   rm -f "$issue_json_file"
 }
 
+# 全アプリ共通の共有知識リポジトリ（m-guchi/docs）をローカルにcloneしてある場合は、
+# --add-dir でworktree外のそのディレクトリも参照できるようにする（issue-deckの
+# docs/shared-knowledge.md「8. Claude Codeへのコンテキストの渡し方」）。cloneしていない
+# 環境でも起動できるよう、存在しない場合は --add-dir を付けずにそのまま起動する。
+SHARED_CONTEXT_DIR="${SHOPPING_LIST_SHARED_CONTEXT_DIR:-$HOME/apps/_docs}"
+CLAUDE_EXTRA_ARGS=()
+if [[ -d "$SHARED_CONTEXT_DIR" ]]; then
+  CLAUDE_EXTRA_ARGS+=(--add-dir "$SHARED_CONTEXT_DIR")
+  echo "共有知識リポジトリを参照可能にします: $SHARED_CONTEXT_DIR"
+else
+  echo "共有知識リポジトリ（$SHARED_CONTEXT_DIR）が見つからないため、参照なしで起動します。"
+fi
+
 # 単一worktree内でclaudeを起動するコマンド文字列を作る（PROMPT_FILEのパスのみを埋め込み、
 # Issue本文・コメントなどの外部由来テキストはコマンド文字列に直接展開しない）。
 build_claude_cmd() {
   local worktree_dir="$1"
   local prompt_file="$2"
-  printf "cd %q && claude --permission-mode acceptEdits \"\$(cat %q)\"" "$worktree_dir" "$prompt_file"
+  local add_dir_arg=""
+  if [[ ${#CLAUDE_EXTRA_ARGS[@]} -gt 0 ]]; then
+    add_dir_arg="$(printf " --add-dir %q" "$SHARED_CONTEXT_DIR")"
+  fi
+  printf "cd %q && claude --permission-mode acceptEdits%s \"\$(cat %q)\"" "$worktree_dir" "$add_dir_arg" "$prompt_file"
 }
 
 if [[ $# -eq 1 ]]; then
@@ -220,7 +237,8 @@ if [[ $# -eq 1 ]]; then
   echo "#$n: Claude Codeセッションを起動します（このターミナルで実行）..."
   cd "$WORKTREE_DIR"
   PROMPT_CONTENT="$(cat "$PROMPT_FILE")"
-  exec claude --permission-mode acceptEdits "$PROMPT_CONTENT"
+  # set -u 下で空配列の展開がエラーにならないよう ${arr[@]+...} で囲む
+  exec claude --permission-mode acceptEdits ${CLAUDE_EXTRA_ARGS[@]+"${CLAUDE_EXTRA_ARGS[@]}"} "$PROMPT_CONTENT"
 fi
 
 # 複数issue指定時は、それぞれ独立したセッションを同時に使うため新しいWindows Terminalタブで起動する。
@@ -238,6 +256,6 @@ for n in "$@"; do
     wt.exe -w 0 new-tab --title "issue-$n" -- wsl.exe -d "$DISTRO" -- bash -lc "$cmd"
   else
     echo "#$n: worktreeの準備ができました。以下を手動で実行してください:"
-    echo "  cd \"$WORKTREE_DIR\" && claude --permission-mode acceptEdits \"\$(cat \"$PROMPT_FILE\")\""
+    echo "  $(build_claude_cmd "$WORKTREE_DIR" "$PROMPT_FILE")"
   fi
 done
