@@ -1,8 +1,15 @@
 'use strict';
 
-const APP_VERSION = '0.4.2';
+const APP_VERSION = '0.4.3';
 
 const APP_CHANGELOG = [
+  {
+    version: '0.4.3',
+    date: '2026-08-08',
+    changes: [
+      '右上のアカウントアイコンに、Googleアカウントのプロフィール画像を表示するようにしました',
+    ],
+  },
   {
     version: '0.4.2',
     date: '2026-08-08',
