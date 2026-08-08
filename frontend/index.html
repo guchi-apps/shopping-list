@@ -103,6 +103,19 @@
   </div>
 </div>
 
+<div class="sheet-overlay" id="confirmOverlay" hidden>
+  <div class="sheet" role="alertdialog" aria-modal="true" aria-labelledby="confirmTitle" aria-describedby="confirmMessage">
+    <div class="sheet-header">
+      <h2 id="confirmTitle">確認</h2>
+    </div>
+    <p class="confirm-message" id="confirmMessage"></p>
+    <div class="sheet-actions">
+      <button type="button" class="btn-secondary" id="confirmCancel">キャンセル</button>
+      <button type="button" class="btn-danger" id="confirmOk">削除する</button>
+    </div>
+  </div>
+</div>
+
 <div class="toast" id="toast" hidden></div>
 
 <script src="changelog.js"></script>
