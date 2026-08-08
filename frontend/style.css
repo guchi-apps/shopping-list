@@ -33,7 +33,7 @@ body {
 input::placeholder, textarea::placeholder { color: rgba(43, 35, 32, 0.35); }
 
 .app {
-  min-height: 100dvh;
+  height: 100dvh;
   max-width: 560px;
   margin: 0 auto;
   background: var(--card);
@@ -41,6 +41,7 @@ input::placeholder, textarea::placeholder { color: rgba(43, 35, 32, 0.35); }
   flex-direction: column;
   position: relative;
   padding-top: max(env(safe-area-inset-top), 24px);
+  overflow: hidden;
 }
 .app[hidden] { display: none; }
 
