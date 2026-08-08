@@ -46,13 +46,13 @@ async function captureViewport(browser, viewport, outputPaths) {
   await page.waitForSelector('#addOverlay:not([hidden])');
   await shoot('add');
   await page.click('#addClose');
-  await page.waitForSelector('#addOverlay[hidden]');
+  await page.waitForSelector('#addOverlay', { state: 'hidden' });
 
   await page.click('.item-row .item-name');
   await page.waitForSelector('#editOverlay:not([hidden])');
   await shoot('edit');
   await page.click('#editClose');
-  await page.waitForSelector('#editOverlay[hidden]');
+  await page.waitForSelector('#editOverlay', { state: 'hidden' });
 
   await page.click('#profileButton');
   await page.waitForSelector('#profileMenu:not([hidden])');
