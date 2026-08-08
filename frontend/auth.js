@@ -12,12 +12,38 @@ const ShoppingListAuth = (() => {
 
   let clientPromise;
 
+  // CI専用ログインバイパス用のダミークライアント。@supabase/supabase-jsのCDN動的importを避けるため、
+  // 実クライアントと同じ形（auth.getSession等）だけを持つ最小限のオブジェクトを返す。
+  function createCiBypassClient(token) {
+    const session = { access_token: token, user: { email: 'ci-bypass@example.com' } };
+    return {
+      auth: {
+        async getSession() {
+          return { data: { session } };
+        },
+        async signInWithOAuth() {
+          return { error: null };
+        },
+        async signOut() {
+          return { error: null };
+        },
+        async exchangeCodeForSession() {
+          return { data: { session }, error: null };
+        },
+        onAuthStateChange() {
+          return { data: { subscription: { unsubscribe() {} } } };
+        },
+      },
+    };
+  }
+
   async function loadClient() {
-    const [{ createClient }, res] = await Promise.all([
-      import(SUPABASE_JS_URL),
-      fetch(new URL('api/config', SCRIPT_URL)),
-    ]);
-    const { supabaseUrl, supabasePublishableKey } = await res.json();
+    const res = await fetch(new URL('api/config', SCRIPT_URL));
+    const { supabaseUrl, supabasePublishableKey, ciAuthBypassToken } = await res.json();
+    if (ciAuthBypassToken) {
+      return createCiBypassClient(ciAuthBypassToken);
+    }
+    const { createClient } = await import(SUPABASE_JS_URL);
     // このSupabaseプロジェクトのGoogleログインはPKCEではなくimplicit flow（URLの#access_token）
     // で返ってくるため、supabase-js標準の自動検出（detectSessionInUrl、デフォルトtrue）に任せる。
     return createClient(supabaseUrl, supabasePublishableKey);

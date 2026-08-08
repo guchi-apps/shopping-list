@@ -3,10 +3,11 @@
 const http = require('node:http');
 const fs = require('node:fs');
 const path = require('node:path');
-const notion = require('./notion');
+const notion = process.env.NOTION_STUB === '1' ? require('./notion-stub') : require('./notion');
 const { createVerifier } = require('./auth');
 
 const PORT = Number(process.env.PORT) || 3101;
+const CI_AUTH_BYPASS_TOKEN = process.env.CI_AUTH_BYPASS_TOKEN || '';
 const NOTION_TOKEN = process.env.NOTION_TOKEN || '';
 const NOTION_DATA_SOURCE_ID =
   process.env.NOTION_DATA_SOURCE_ID || 'e011508b-b1b2-47aa-a604-178bf64158b8';
@@ -20,7 +21,11 @@ const ALLOWED_GOOGLE_EMAILS = new Set(
     .filter(Boolean)
 );
 
-const authVerifier = createVerifier({ supabaseUrl: SUPABASE_URL, allowedEmails: ALLOWED_GOOGLE_EMAILS });
+const authVerifier = createVerifier({
+  supabaseUrl: SUPABASE_URL,
+  allowedEmails: ALLOWED_GOOGLE_EMAILS,
+  ciBypassToken: CI_AUTH_BYPASS_TOKEN,
+});
 
 async function requireAuth(req) {
   const match = (req.headers.authorization || '').match(/^Bearer (.+)$/);
@@ -89,6 +94,7 @@ async function handleApi(req, res, pathname) {
     return sendJson(res, 200, {
       supabaseUrl: SUPABASE_URL,
       supabasePublishableKey: SUPABASE_PUBLISHABLE_KEY,
+      ...(CI_AUTH_BYPASS_TOKEN ? { ciAuthBypassToken: CI_AUTH_BYPASS_TOKEN } : {}),
     });
   }
 
