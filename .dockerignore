@@ -1,0 +1,12 @@
+.git
+.github
+node_modules
+*.log
+.DS_Store
+.env
+.env.local
+.env.tpl
+deploy
+scripts
+README.md
+CLAUDE.md

@@ -1,0 +1,28 @@
+# PRごとのプレビュー環境用の雛形。
+# app 名は仮のプレースホルダ。実アプリ名・Fly.io組織の確定は人間の判断待ち（#53 スコープ外）。
+app = "shopping-list-preview"
+primary_region = "nrt"
+
+[build]
+
+[env]
+  PORT = "3101"
+
+[http_service]
+  internal_port = 3101
+  force_https = true
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 0
+  processes = ["app"]
+
+  [[http_service.checks]]
+    grace_period = "5s"
+    interval = "30s"
+    method = "GET"
+    timeout = "3s"
+    path = "/healthz"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "256mb"
