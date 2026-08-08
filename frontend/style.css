@@ -30,7 +30,7 @@ body {
   color: var(--ink);
 }
 
-input::placeholder { color: rgba(43, 35, 32, 0.35); }
+input::placeholder, textarea::placeholder { color: rgba(43, 35, 32, 0.35); }
 
 .app {
   min-height: 100dvh;
@@ -353,6 +353,12 @@ input::placeholder { color: rgba(43, 35, 32, 0.35); }
   color: var(--ink);
   margin-bottom: 10px;
   font-family: inherit;
+}
+
+.textarea-memo {
+  resize: vertical;
+  min-height: 72px;
+  line-height: 1.5;
 }
 
 .field-label {
