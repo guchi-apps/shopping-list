@@ -1,8 +1,15 @@
 'use strict';
 
-const APP_VERSION = '0.4.0';
+const APP_VERSION = '0.4.1';
 
 const APP_CHANGELOG = [
+  {
+    version: '0.4.1',
+    date: '2026-08-08',
+    changes: [
+      '右下の追加ボタン（＋）がスクロールで画面から流れてしまう不具合を修正しました',
+    ],
+  },
   {
     version: '0.4.0',
     date: '2026-08-08',
