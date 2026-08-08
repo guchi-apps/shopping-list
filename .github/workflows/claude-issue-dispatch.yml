@@ -1,0 +1,1312 @@
+name: Claude Issue Dispatch
+
+# m-guchi/issue-deck の .github/workflows/claude-issue-dispatch.yml を移植したもの。
+# 移植元コミット: baf7873f91321a1d981eae78fbb6dc697ffc2c6e
+# 導入手順は issue-deck の docs/cross-repo-setup-guide.md を参照。
+# 以下のコメント中の #番号 は issue-deck 側のIssue番号を指す。
+#
+# 移植時の改変:
+# - MySQLサービスコンテナ・pnpmセットアップ・`pnpm install`・DBマイグレーション・
+#   CIバイパス用ユーザーのシード・ダミーデータのシード・Playwrightインストールの
+#   前段ステップをすべて削除した。本リポジトリはDB・ビルド・npm依存パッケージを持たず、
+#   かつCIログインバイパス機構が無いためスクリーンショットの無人撮影に未対応
+# - `24.screenshot-required`が付いたIssueは、撮影を試みず`23.preview-required`と同様に
+#   人間の画面確認を待って停止する（専用の通知ステップを追加）
+# - 検証コマンドを`npm run check`に、allowedToolsを`Bash(npm:*)`/`Bash(node:*)`に置換
+#
+# Issueへの@claudeコメントを起点に、issue-<番号>ブランチ作成・実装・develop向けPR作成を
+# GitHub Actions上で無人実行する。
+#
+# 21.plan-requiredラベルが付いているissueは二段階トリガーにする(無人実行では
+# 対話的な承認者がその場にいないため):
+#   1. 計画をIssueコメントとして投稿し、00.check-userを付与して停止する(implementはしない)
+#   2. 人間が計画を確認し、00.check-userラベルを外すと「承認」とみなして実装を再開する
+#      (00.check-userが付いたままの状態で新たに@claudeコメントが付いた場合は、計画の
+#      練り直し依頼として扱い、計画コメントを投稿し直す。00.check-userは外さない)
+#      計画コメントへの反応が「質問」と判定された場合も、回答コメント投稿後に00.check-userを
+#      必ず再付与する(issue-deck画面の「修正」ボタンは送信前に機械的に00.check-userを外すため、
+#      質問と判定されると確認待ちラベルが復元されないまま消えてしまう問題があった。issue-deck #417)
+#      00.check-userは自動マージ不可判定でも使われる汎用の「要確認」ラベルだが、
+#      実装ブランチ(issue-<番号>)がまだ存在しない状態でのみ「承認」と解釈するため、
+#      既にPRが存在する状態で外されても実装が誤って再始動することはない。
+#      issue-deckアプリの承認ボタンはラベル更新を個人のGitHub OAuthトークン経由で行うため、
+#      GitHub上は操作した本人のアカウントによるissues/unlabeledイベントとして記録され、
+#      自己ループ防止ロジック(Bot判定)には引っかからない(issue-deck #566)。ただし
+#      21.plan-required保持時(ブランチ未作成の計画承認・練り直し)は、ラベル除去イベント単独で
+#      実装再開に必要な情報が揃うため、アプリが続けて送る確認コメントと二重に実装を再始動しかねない。
+#      この場合のみアプリは確認コメント本文に<!-- issue-deck:no-trigger -->マーカーを付与し、
+#      ラベル除去イベント単独を正規のトリガーとする。
+#   3. 承認・練り直しのいずれもせず計画を拒否する場合は、人間がIssueを直接クローズする
+#      (`not planned`等の理由)。クローズ済みIssueは本ワークフローの全モードで再始動しない
+#      (issue_closedガード)。
+#
+# 21.plan-requiredの計画提示ステップは、実装範囲が広くGitHub Actions上で一度に処理しきれない
+# 懸念がある場合、計画コメントをサブIssueへの分割案として提示できる。計画コメント末尾に
+# 埋め込む<!-- issue-deck-plan-type:implement|split -->マーカーにより、00.check-user解除時に
+# 実装(mode=implement)を始めるかサブIssueへの分割(mode=split)を始めるかを判定する。
+#
+# issue-deckの「Claudeに質問する」ダイアログが投稿する`@claude 質問: `で始まるコメントは、
+# コード変更を伴わない読み取り専用の質問応答(mode=ask)として扱う。実装状況によらず常に
+# 最優先で割り込み、ラベル変更・ブランチ作成・コミット・PR作成は一切行わずIssueへの回答
+# コメントの投稿のみを行う。
+#
+# issue-<番号>ブランチが既に存在する場合でも、issue_commentトリガー(人間からの明示的な
+# @claudeコメント)であれば、以下のいずれかに該当する限りmode=additional(既存ブランチへの
+# 追加対応)として扱う。00.check-userの有無は問わない。
+#   - PRがOPEN: 追加の依頼内容としてコミットをpushし、既存PRにコメントで報告する。
+#   - PRがまだ一度も無く、かつ02.wipが付いている: 前回の実装試行がPR作成に至らないまま
+#     終了し詰まった状態の可能性がある。ブランチの削除・作り直しは人間しか行わないが、
+#     その既存ブランチをそのままcheckoutして続きから再開すること自体は自動で行う。
+# PRがMERGED/CLOSED、またはPRが無く02.wipも付いていない異常な中間状態の場合はmode=skip。
+#
+# パブリックリポジトリのため、Issueへのコメント自体は誰でも投稿できる。そのため
+# 全トリガー経路で一律に実行者(github.actor)のリポジトリ権限を確認し、write権限未満の
+# 場合は何もしない。ただし issue-deckアプリ自身のGitHub App経由のコメント投稿
+# (issue-deck[bot])は、人間がアプリ画面上で操作していてもGitHub上は常にBot扱いになるため
+# 例外とし、アプリがコメント本文に埋め込む投稿者マーカーから実際に操作した人間を復元した
+# うえで同様に権限確認する。
+#
+# @claudeトリガーの判定はcontains()ではなくstartsWith()を使う(issue-deck #173)。containsだと、
+# このワークフロー自身が投稿する完了報告コメントにまで反応し、報告コメント→再トリガー→
+# 報告コメント...の無限ループを起こしうる。
+#
+# ブランチのpush(Checkoutステップ)・実装ステップのgit push/PR作成はGITHUB_TOKENではなく、
+# secrets.WORKFLOW_PAT(Repository permissions > Workflows: Read and write を持つ
+# Fine-grained PAT)を使う(issue-deck #106)。既定のGITHUB_TOKENは`.github/workflows/`配下への
+# push権限をGitHubの仕様上原理的に持てないため、本ワークフロー自身がワークフローファイルを
+# 変更するIssueを扱えるようにするにはPATが必須。
+#
+# ジョブは triage → dispatch → notify-failure の3段構成(issue-deck #651)。
+#   triage        : 実行者の権限・issueの状態を判定してmodeを決める。concurrency・uses: の
+#                   いずれも持たず即時実行される。受理を示す👀リアクションと、mode=skipのうち
+#                   コメント返信が必要なケースもここで処理する。
+#   dispatch      : mode!=skipのときだけ動く重い本体。issueごとのconcurrencyはこのジョブだけが持つ。
+#   notify-failure: triage/dispatchのいずれかが失敗した場合にIssueへ通知する。
+
+on:
+  issues:
+    types: [unlabeled]
+  issue_comment:
+    types: [created]
+  # 計画/実装フォールバック検証ステップ専用の自己リトライ起動経路(issue-deck #497)。
+  # 人間が直接手動実行することも許容する(GitHub側がworkflow_dispatchの実行自体に
+  # write権限を要求するため、実行者チェックの信頼レベルは他のトリガー経路と同等)。
+  workflow_dispatch:
+    inputs:
+      issue_number:
+        description: "対象issue番号"
+        required: true
+        type: string
+      retry_attempt:
+        description: "これまでの自動リトライ回数(0始まり。指定した回数の次の試行として実行する)"
+        required: false
+        type: string
+        default: "0"
+
+jobs:
+  # 実行者・issueの状態判定を、重いdispatchジョブから切り離して先に実行する(issue-deck #651)。
+  # このジョブはconcurrency・uses:のいずれも持たない。特にuses:を使わないことで、actionの
+  # 解決処理(Getting action download info)が落ちる種類の障害でも判定・リアクション・skip時の
+  # 返信までは生き残る(notify-failureジョブと同じ考え方)。
+  triage:
+    if: |
+      (github.event_name == 'issues' && github.event.action == 'unlabeled' && github.event.label.name == '00.check-user') ||
+      (github.event_name == 'issue_comment' && github.event.issue.pull_request == null && startsWith(github.event.comment.body, '@claude') && !contains(github.event.comment.body, '<!-- issue-deck:no-trigger -->')) ||
+      github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+      pull-requests: read
+    outputs:
+      mode: ${{ steps.state.outputs.mode }}
+      issue_number: ${{ steps.state.outputs.issue_number }}
+      branch: ${{ steps.state.outputs.branch }}
+      pr_url: ${{ steps.state.outputs.pr_url }}
+      retry_attempt: ${{ steps.state.outputs.retry_attempt }}
+      issue_closed: ${{ steps.state.outputs.issue_closed }}
+      branch_exists: ${{ steps.state.outputs.branch_exists }}
+      screenshot_required: ${{ steps.state.outputs.screenshot_required }}
+      preview_required: ${{ steps.state.outputs.preview_required }}
+      lane: ${{ steps.state.outputs.lane }}
+    steps:
+      - name: 実行者の権限・状態を判定する
+        id: state
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          ISSUE_NUMBER: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.issue_number || github.event.issue.number }}
+          ACTOR: ${{ github.actor }}
+          ACTOR_TYPE: ${{ github.event.sender.type }}
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_ACTION: ${{ github.event.action }}
+          EVENT_LABEL: ${{ github.event.label.name }}
+          COMMENT_BODY: ${{ github.event.comment.body }}
+          INPUT_RETRY_ATTEMPT: ${{ github.event.inputs.retry_attempt }}
+        run: |
+          set -e
+          echo "issue_number=$ISSUE_NUMBER" >> "$GITHUB_OUTPUT"
+
+          RETRY_ATTEMPT="${INPUT_RETRY_ATTEMPT:-0}"
+          : "${RETRY_ATTEMPT:=0}"
+          # 後続のフォールバック検証ステップで$((RETRY_ATTEMPT + 1))という算術展開に使うため、
+          # workflow_dispatchの手動起動等で不正な値が渡された場合に備え数値であることを検証する。
+          case "$RETRY_ATTEMPT" in ''|*[!0-9]*) RETRY_ATTEMPT=0 ;; esac
+          echo "retry_attempt=$RETRY_ATTEMPT" >> "$GITHUB_OUTPUT"
+
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            # フォールバック検証ステップからの自己リトライ専用の起動経路。workflow_dispatchの
+            # API呼び出し自体がリポジトリへのwrite権限を要求するため、issue_comment向けに
+            # 実装済みのBot判定・実行者パーミッション確認と同等の信頼レベルが既に担保されている。
+            echo "workflow_dispatch起動のため、Bot判定・実行者パーミッション確認をスキップします（retry_attempt=$RETRY_ATTEMPT）"
+          else
+            if [ "$ACTOR_TYPE" = "Bot" ]; then
+              # issue-deckアプリ自身のGitHub App経由の書き込みは、人間がアプリ画面上で
+              # 操作した場合でもGitHub上は issue-deck[bot] が投稿者になる。issue_comment
+              # イベントに限り、アプリがコメント本文の末尾に埋め込む投稿者マーカー
+              # (<!-- issue-deck:posted-by:<login> -->。ユーザー入力より後ろに付くため
+              # 本文中の偽マーカーは無効)から実際に操作した人間のログイン名を取り出し、
+              # 以降の権限チェックをその人間に対して行う。
+              POSTED_BY=""
+              if [ "$ACTOR" = "issue-deck[bot]" ] && [ "$EVENT_NAME" = "issue_comment" ]; then
+                POSTED_BY="$(printf '%s' "$COMMENT_BODY" | grep -oP '(?<=<!-- issue-deck:posted-by:)\S+(?= -->)' | tail -n1 || true)"
+              fi
+              if [ -z "$POSTED_BY" ]; then
+                echo "実行者がBotのため何もしません（自己ループ防止）: $ACTOR"
+                echo "mode=skip" >> "$GITHUB_OUTPUT"
+                exit 0
+              fi
+              echo "issue-deck[bot]経由のコメントを検出、投稿者マーカーから実行者を復元します: $POSTED_BY"
+              ACTOR="$POSTED_BY"
+            fi
+
+            PERMISSION="$(gh api "repos/$GH_REPO/collaborators/$ACTOR/permission" --jq .permission 2>/dev/null || echo "none")"
+            case "$PERMISSION" in
+              admin|write|maintain) : ;;
+              *)
+                echo "実行者 $ACTOR はwrite権限を持たないため何もしません（権限: $PERMISSION）"
+                echo "mode=skip" >> "$GITHUB_OUTPUT"
+                exit 0
+                ;;
+            esac
+          fi
+
+          BRANCH="issue-$ISSUE_NUMBER"
+          echo "branch=$BRANCH" >> "$GITHUB_OUTPUT"
+
+          # クローズ済みのIssueは実装・計画・分割のいずれも再始動しない。
+          ISSUE_STATE="$(gh issue view "$ISSUE_NUMBER" --json state --jq .state)"
+          ISSUE_CLOSED=false
+          [ "$ISSUE_STATE" = "CLOSED" ] && ISSUE_CLOSED=true
+          echo "issue_closed=$ISSUE_CLOSED" >> "$GITHUB_OUTPUT"
+
+          # triageジョブはcheckoutを行わない(uses:を一切使わないため)ので、git ls-remoteでは
+          # なくGitHub APIでブランチの存在を確認する。
+          BRANCH_EXISTS=false
+          if gh api "repos/$GH_REPO/branches/$BRANCH" >/dev/null 2>&1; then
+            BRANCH_EXISTS=true
+          fi
+          echo "branch_exists=$BRANCH_EXISTS" >> "$GITHUB_OUTPUT"
+
+          # ブランチが既に存在する場合、対応するdevelop向けPRの状態を見て、追加対応
+          # (mode=additional)として扱うかを判定する。
+          PR_STATE=""
+          PR_URL=""
+          if [ "$BRANCH_EXISTS" = "true" ]; then
+            PR_JSON="$(gh pr list --head "$BRANCH" --state all --json state,url --jq '.[0]' 2>/dev/null || true)"
+            if [ -n "$PR_JSON" ] && [ "$PR_JSON" != "null" ]; then
+              PR_STATE="$(printf '%s' "$PR_JSON" | jq -r '.state')"
+              PR_URL="$(printf '%s' "$PR_JSON" | jq -r '.url')"
+            fi
+          fi
+          echo "pr_url=$PR_URL" >> "$GITHUB_OUTPUT"
+
+          LABELS="$(gh issue view "$ISSUE_NUMBER" --json labels --jq '.labels[].name')"
+          PLAN_REQUIRED=false
+          echo "$LABELS" | grep -qx "21.plan-required" && PLAN_REQUIRED=true
+          AWAITING_CONFIRM=false
+          echo "$LABELS" | grep -qx "00.check-user" && AWAITING_CONFIRM=true
+          WIP=false
+          echo "$LABELS" | grep -qx "02.wip" && WIP=true
+          SCREENSHOT_REQUIRED=false
+          echo "$LABELS" | grep -qx "24.screenshot-required" && SCREENSHOT_REQUIRED=true
+          echo "screenshot_required=$SCREENSHOT_REQUIRED" >> "$GITHUB_OUTPUT"
+          PREVIEW_REQUIRED=false
+          echo "$LABELS" | grep -qx "23.preview-required" && PREVIEW_REQUIRED=true
+          echo "preview_required=$PREVIEW_REQUIRED" >> "$GITHUB_OUTPUT"
+
+          # issue-deckの「Claudeに質問する」ダイアログが投稿する定型プレフィックスで始まる
+          # コメントかを判定する。該当する場合、実装状況によらず常に最優先で読み取り専用の
+          # 質問応答モード(mode=ask)へ割り込む。
+          IS_ASK=false
+          case "$COMMENT_BODY" in
+            "@claude 質問: "*) IS_ASK=true ;;
+          esac
+
+          # ブランチが既に存在する場合の分岐(labeled/unlabeledイベントは人間からの明示的な
+          # 追加依頼ではないため、以下はissue_comment・workflow_dispatchトリガーに限定する):
+          # - PRがOPENなら追加対応として扱う。00.check-userの有無は問わない。
+          # - PRがまだ無く02.wipが付いている詰まった状態も追加対応として扱い、既存ブランチを
+          #   そのままcheckoutして続きから再開する。
+          # - それ以外はmode=skipとし、実装は再始動しない。
+          MODE=skip
+          if [ "$EVENT_NAME" = "issue_comment" ] && [ "$IS_ASK" = "true" ]; then
+            MODE=ask
+          elif [ "$ISSUE_CLOSED" = "true" ]; then
+            MODE=skip
+          elif [ "$BRANCH_EXISTS" = "true" ]; then
+            if [ "$EVENT_NAME" != "issue_comment" ] && [ "$EVENT_NAME" != "workflow_dispatch" ]; then
+              MODE=skip
+            elif [ "$PR_STATE" = "OPEN" ]; then
+              MODE=additional
+            elif [ -z "$PR_STATE" ] && [ "$WIP" = "true" ]; then
+              MODE=additional
+            else
+              MODE=skip
+            fi
+          elif [ "$AWAITING_CONFIRM" = "true" ]; then
+            # 計画レビュー待ち中の@claudeコメントは、計画の練り直し依頼として扱う。
+            # workflow_dispatchは計画提示フォールバックからの自己リトライであり、
+            # この状態(00.check-user付与中)で起動するためissue_commentと同様に扱う。
+            if [ "$EVENT_NAME" = "issue_comment" ] || [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+              MODE=plan
+            fi
+          elif [ "$PLAN_REQUIRED" = "true" ]; then
+            MODE=plan
+          else
+            # 00.check-user・21.plan-requiredともに付いていない状態。計画レビューを経ていた
+            # issueであれば、それらのラベルが外れた = 承認とみなす。直前の計画コメントに
+            # 埋め込まれた<!-- issue-deck-plan-type:implement|split -->マーカーから、
+            # そのまま実装するかサブIssueへ分割するかを判定する。マーカーが無い場合は
+            # implementにフォールバックする。
+            PLAN_TYPE="$(gh issue view "$ISSUE_NUMBER" --json comments --jq '.comments[].body' | grep -oP '(?<=<!-- issue-deck-plan-type:)(implement|split)(?= -->)' | tail -n1 || true)"
+            : "${PLAN_TYPE:=implement}"
+            if [ "$PLAN_TYPE" = "split" ]; then
+              MODE=split
+            else
+              MODE=implement
+            fi
+          fi
+
+          echo "mode=$MODE" >> "$GITHUB_OUTPUT"
+
+          # dispatchジョブのconcurrencyグループをbranch/commentレーンに分割するためのlane算出。
+          # implement/additionalは実際にissue-<番号>ブランチへcommit・pushするレーン(branch)、
+          # それ以外(plan/split/ask/skip)はブランチに触れずコメント投稿のみのレーン(comment)。
+          case "$MODE" in
+            implement|additional) LANE=branch ;;
+            *) LANE=comment ;;
+          esac
+          echo "lane=$LANE" >> "$GITHUB_OUTPUT"
+
+          echo "判定結果: mode=$MODE lane=$LANE branch=$BRANCH plan_required=$PLAN_REQUIRED awaiting_confirm=$AWAITING_CONFIRM wip=$WIP branch_exists=$BRANCH_EXISTS pr_state=$PR_STATE issue_closed=$ISSUE_CLOSED screenshot_required=$SCREENSHOT_REQUIRED preview_required=$PREVIEW_REQUIRED"
+
+      - name: 依頼を受け取ったことをリアクションで示す
+        # triageはconcurrencyの外で即時実行されるため、dispatchがキュー待ちの間でも「受け取った」
+        # ことが利用者に見える。リアクション付与の失敗自体は本筋ではないためcontinue-on-error。
+        if: steps.state.outputs.mode != 'skip'
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          COMMENT_ID: ${{ github.event.comment.id }}
+          ISSUE_NUMBER: ${{ steps.state.outputs.issue_number }}
+        run: |
+          set -e
+          if [ -n "$COMMENT_ID" ]; then
+            gh api -X POST "repos/$GH_REPO/issues/comments/$COMMENT_ID/reactions" -f content=eyes --silent
+          else
+            gh api -X POST "repos/$GH_REPO/issues/$ISSUE_NUMBER/reactions" -f content=eyes --silent
+          fi
+
+      - name: 実装済み・対応中のissueへの@claudeコメントに返信する
+        # BRANCH_EXISTS=trueかつmode=skipとなるケース。develop向けPRがOPENの状態、または
+        # PRが無く02.wipが付いている詰まった状態でissue_commentが来た場合はmode=additional
+        # になり、このステップの対象外。ここに該当するのはPRがMERGED/CLOSED、またはPRが無く
+        # 02.wipも付いていない異常な中間状態で、実装は再始動しないがissue_commentトリガー
+        # (人間が直接@claudeへ呼びかけたケース)に限り対応状況を返信する。
+        if: |
+          steps.state.outputs.mode == 'skip' &&
+          github.event_name == 'issue_comment' &&
+          (steps.state.outputs.branch_exists == 'true' || steps.state.outputs.issue_closed == 'true')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -e
+          if [ "${{ steps.state.outputs.issue_closed }}" = "true" ]; then
+            BODY='ℹ️ このIssueは既にクローズされています。分割により対応が複数のサブIssueに分かれている場合、コメント欄でリンクをご確認ください。'
+            BODY="$BODY"$'\n\n''追加の対応が必要な場合、このコメントをきっかけに実装が再始動することはありません。人間が対応してください。'
+            BODY="$BODY"$'\n\n<!-- issue-deck-source:claude-issue-dispatch -->'$'\n\n<!-- issue-deck-agent:guide -->'
+            gh issue comment ${{ steps.state.outputs.issue_number }} --body "$BODY"
+            exit 0
+          fi
+          BRANCH="${{ steps.state.outputs.branch }}"
+          PR_URL="${{ steps.state.outputs.pr_url }}"
+          if [ -z "$PR_URL" ]; then
+            BODY="⚠️ \`$BRANCH\` ブランチは存在しますが、Pull Requestも\`02.wip\`ラベルも無い、想定外の状態です。"
+            BODY="$BODY"$'\n\n'"作り直す場合は、人間が明示的に \`git push origin --delete $BRANCH\` 等でブランチを削除してから、改めて\`@claude\`とコメントしてください（このワークフローが自動でブランチを削除・作り直すことはありません）。"
+          else
+            BODY="ℹ️ このIssueは既に \`$BRANCH\` ブランチで対応中、または対応済みです。関連するPull Requestはこちらです: $PR_URL"
+            BODY="$BODY"$'\n\n''追加の対応が必要な場合、このコメントをきっかけに実装が再始動することはありません。ブランチやPull Requestの状態を直接ご確認のうえ、人間が対応してください。'
+          fi
+          BODY="$BODY"$'\n\n<!-- issue-deck-source:claude-issue-dispatch -->'$'\n\n<!-- issue-deck-agent:guide -->'
+          gh issue comment ${{ steps.state.outputs.issue_number }} --body "$BODY"
+
+  dispatch:
+    needs: triage
+    # mode=skipのrunはここで完全に打ち切る。concurrencyの枠も消費しない。
+    if: needs.triage.outputs.mode != 'skip'
+    runs-on: ubuntu-latest
+    # 同じissueに対して短時間に複数の@claudeコメント等が来た場合、複数のワークフロー実行が
+    # 同じブランチに同時にcheckout・pushして競合するのを避けるため、issueごとに直列化する。
+    # cancel-in-progress: falseにより、先行実行を中断せず後続を待たせる。
+    #
+    # グループ名にはtriageジョブが算出したlane(branch/comment)をサフィックスとして含める。
+    # implement/additional(ブランチへcommit・push)とplan/split/ask(コメント投稿のみ)は
+    # 本来競合しないため、レーンを分けることで両者は並行実行できるようにしつつ、同じレーン内では
+    # 従来どおり直列化を維持する。claude-conflict-resolve.ymlのresolve-conflictsジョブは常に
+    # branchレーンに属する。
+    concurrency:
+      group: issue-dispatch-${{ github.event_name == 'workflow_dispatch' && github.event.inputs.issue_number || github.event.issue.number }}-${{ needs.triage.outputs.lane }}
+      cancel-in-progress: false
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+      # 自己リトライのgh workflow run呼び出しは、GITHUB_TOKENが同呼び出しを誘発しない
+      # 制約があるためsecrets.WORKFLOW_PATを使う(WORKFLOW_PAT側の権限はpermissions:の対象外)。
+      actions: read
+      id-token: write
+    steps:
+      - name: Checkout develop
+        uses: actions/checkout@v4
+        with:
+          ref: develop
+          fetch-depth: 1
+          # .github/workflows/配下を変更するIssueでも実装ステップのgit pushが拒否されないよう、
+          # workflow書き込み権限を持つPAT(secrets.WORKFLOW_PAT)でcheckoutする(issue-deck #106)。
+          # ただしcheckoutが設定する認証情報はclaude-code-actionに消されるため、pushの認証は
+          # 次のステップで別途固定する(issue-deck #662)。
+          token: ${{ secrets.WORKFLOW_PAT }}
+
+      - name: pushの認証をWORKFLOW_PATに固定する
+        # claude-code-actionは実行時にactions/checkoutが.git/configに残した
+        # http.<server>/.extraheaderを削除し、remote.origin.urlを
+        # `https://x-access-token:<action自身のトークン>@github.com/...`へ差し替える。
+        # github_token未指定時のそのトークンはClaude GitHub Appのインストールトークンで、
+        # workflows権限を持たないため`.github/workflows/`配下を含むpushだけがremote rejectedに
+        # なる(issue-deck #662)。
+        #
+        # 一方でgithub_token: WORKFLOW_PATを渡すと、claude-code-actionが実装ステップのGH_TOKENも
+        # 同じPATへ上書きするため「Issue/PRコメントの投稿者が人間名義になる」問題が起きる。
+        # actionに渡すトークン1本では「pushはPAT・コメントはbot」を両立できない。
+        #
+        # そのためpush専用のURL(remote.origin.pushurl)にだけPATを固定する。actionが行うのは
+        # fetch側のremote.origin.urlの書き換えのみでpushurlは触らないため、fetchはaction自身の
+        # トークン、pushはPATという分離が成立する。
+        env:
+          WORKFLOW_PAT: ${{ secrets.WORKFLOW_PAT }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          git remote set-url --push origin \
+            "https://x-access-token:${WORKFLOW_PAT}@github.com/${REPOSITORY}.git"
+
+      - name: triageの判定結果を引き継ぐ
+        # 判定自体はtriageジョブで完了しているが、以降のステップは既存の記述をそのまま活かすため、
+        # 同じ id: state として出力し直す。
+        #
+        # あわせて、triageの判定が古くなっていないかをここで確認する。triageはconcurrencyの
+        # キュー待ちより前に判定するため、待機中に人間がissueをクローズした/00.check-userを
+        # 付けた場合、古い判定のまま実装が走る恐れがある。食い違いを検知した場合はmodeをskipに
+        # 落とし、以降のステップを全て空振りさせる。
+        id: state
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          MODE: ${{ needs.triage.outputs.mode }}
+          ISSUE_NUMBER: ${{ needs.triage.outputs.issue_number }}
+          BRANCH: ${{ needs.triage.outputs.branch }}
+          PR_URL: ${{ needs.triage.outputs.pr_url }}
+          RETRY_ATTEMPT: ${{ needs.triage.outputs.retry_attempt }}
+          ISSUE_CLOSED: ${{ needs.triage.outputs.issue_closed }}
+          BRANCH_EXISTS: ${{ needs.triage.outputs.branch_exists }}
+          SCREENSHOT_REQUIRED: ${{ needs.triage.outputs.screenshot_required }}
+          PREVIEW_REQUIRED: ${{ needs.triage.outputs.preview_required }}
+        run: |
+          set -e
+          echo "triageから引き継いだ判定: mode=$MODE branch=$BRANCH issue_number=$ISSUE_NUMBER"
+
+          STALE_REASON=""
+          ISSUE_JSON="$(gh issue view "$ISSUE_NUMBER" --json state,labels 2>/dev/null || true)"
+          if [ -n "$ISSUE_JSON" ]; then
+            NOW_STATE="$(printf '%s' "$ISSUE_JSON" | jq -r '.state')"
+            NOW_LABELS="$(printf '%s' "$ISSUE_JSON" | jq -r '.labels[].name')"
+            if [ "$NOW_STATE" = "CLOSED" ] && [ "$ISSUE_CLOSED" != "true" ]; then
+              STALE_REASON="判定後にIssueがクローズされた"
+            elif echo "$NOW_LABELS" | grep -qx "00.check-user" && [ "$MODE" != "plan" ] && [ "$MODE" != "ask" ]; then
+              STALE_REASON="判定後に00.check-userが付与された"
+            fi
+          else
+            echo "Issueの再取得に失敗したため、陳腐化の確認はスキップします"
+          fi
+
+          if [ -n "$STALE_REASON" ]; then
+            echo "$STALE_REASON ため、実装に入らず中止します（mode=$MODE -> skip）"
+            BODY="⏹️ 順番待ちの間にIssueの状態が変わったため（$STALE_REASON）、今回の自動対応は実行せず中止しました。"
+            BODY="$BODY"$'\n\n''必要であれば改めて `@claude` とコメントしてください。'
+            BODY="$BODY"$'\n\n<!-- issue-deck-source:claude-issue-dispatch -->'$'\n\n<!-- issue-deck-agent:guide -->'
+            gh issue comment "$ISSUE_NUMBER" --body "$BODY" || true
+            MODE=skip
+          fi
+
+          {
+            echo "mode=$MODE"
+            echo "issue_number=$ISSUE_NUMBER"
+            echo "branch=$BRANCH"
+            echo "pr_url=$PR_URL"
+            echo "retry_attempt=$RETRY_ATTEMPT"
+            echo "issue_closed=$ISSUE_CLOSED"
+            echo "branch_exists=$BRANCH_EXISTS"
+            echo "screenshot_required=$SCREENSHOT_REQUIRED"
+            echo "preview_required=$PREVIEW_REQUIRED"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: claude-code-actionに渡すモデル指定を取得する
+        id: claude_model
+        # issue-deckが持つ全リポジトリ共通のモデル設定を読み取り専用APIから取得し、以降の各
+        # claude-code-actionステップのclaude_argsに埋め込む--modelの値にする。"auto"（未設定時の
+        # デフォルト含む）の場合はmodel_flagを空文字にし、--modelを一切付与しない。
+        # APP_BASE_URL未設定・疎通失敗時もautoにフォールバックするため、設定は任意。
+        if: steps.state.outputs.mode != 'skip'
+        env:
+          APP_BASE_URL: ${{ vars.APP_BASE_URL }}
+        run: |
+          CLAUDE_MODEL=auto
+          if [ -z "$APP_BASE_URL" ]; then
+            echo "::warning::APP_BASE_URLが未設定のため、claudeModel設定の取得をスキップしautoにフォールバックしました"
+          else
+            CURL_EXIT=0
+            RESPONSE="$(curl -fsS "$APP_BASE_URL/api/settings/claude-model" 2>/dev/null)" || CURL_EXIT=$?
+            if [ "$CURL_EXIT" -ne 0 ]; then
+              echo "::warning::APP_BASE_URL(${APP_BASE_URL})への疎通に失敗したため、claudeModel設定の取得に失敗しautoにフォールバックしました（curl exit code: ${CURL_EXIT}）"
+            elif [ -z "$RESPONSE" ]; then
+              echo "::warning::APP_BASE_URL(${APP_BASE_URL})からのレスポンスが空だったため、claudeModel設定の取得に失敗しautoにフォールバックしました"
+            else
+              CLAUDE_MODEL="$(printf '%s' "$RESPONSE" | jq -r '.claudeModel // "auto"' 2>/dev/null)" || true
+              if [ -z "$CLAUDE_MODEL" ]; then
+                echo "::warning::APP_BASE_URL(${APP_BASE_URL})からのレスポンスのJSONパースに失敗したため、claudeModel設定の取得に失敗しautoにフォールバックしました（レスポンス: ${RESPONSE}）"
+                CLAUDE_MODEL=auto
+              fi
+            fi
+          fi
+          case "$CLAUDE_MODEL" in
+            opus|sonnet|haiku) : ;;
+            *) CLAUDE_MODEL=auto ;;
+          esac
+          echo "model=$CLAUDE_MODEL" >> "$GITHUB_OUTPUT"
+          if [ "$CLAUDE_MODEL" = "auto" ]; then
+            echo "model_flag=" >> "$GITHUB_OUTPUT"
+          else
+            echo "model_flag=--model $CLAUDE_MODEL" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: 対応開始をコメントで通知する
+        # Claude Codeエージェント自身に通知コメントの投稿を委ねると、調査に時間がかかった場合や
+        # 途中で行き詰まった場合に「依頼を受け取ったこと」自体が使用者に伝わらない恐れがある。
+        # そのため後続のClaude Codeステップとは独立した、失敗しにくい単純なシェルスクリプトの
+        # ステップとしてここで確実に投稿する。
+        # workflow_dispatch起動(自己リトライ)では、フォールバック検証ステップ側が専用の
+        # 「自動リトライします」コメントを既に投稿しているため、ここでは投稿しない。
+        if: github.event_name != 'workflow_dispatch' && (steps.state.outputs.mode == 'plan' || steps.state.outputs.mode == 'implement' || steps.state.outputs.mode == 'additional' || steps.state.outputs.mode == 'split' || steps.state.outputs.mode == 'ask')
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -e
+          if [ "${{ steps.state.outputs.mode }}" = "ask" ]; then
+            BODY='🤔 ご質問を確認しました。回答をまとめています。'
+            AGENT_ROLE=guide
+          elif [ "${{ steps.state.outputs.mode }}" = "plan" ]; then
+            BODY='🔍 依頼を確認しました。実装前の計画を検討します（まとまり次第このIssueにコメントします）。'
+            AGENT_ROLE=guide
+          elif [ "${{ steps.state.outputs.mode }}" = "split" ]; then
+            BODY='🔀 承認された計画に沿って、このIssueをサブIssueに分割します（完了次第このIssueにコメントします）。'
+            AGENT_ROLE=guide
+          elif [ "${{ steps.state.outputs.mode }}" = "additional" ] && [ -n "${{ steps.state.outputs.pr_url }}" ]; then
+            BODY="🔧 依頼を確認しました。既存の \`${{ steps.state.outputs.branch }}\` ブランチ・Pull Request（${{ steps.state.outputs.pr_url }}）に追加コミットします。"
+            AGENT_ROLE=implementer
+          elif [ "${{ steps.state.outputs.mode }}" = "additional" ]; then
+            BODY="🔧 前回の実装がPull Request作成に至らないまま終了した可能性があるため、既存の \`${{ steps.state.outputs.branch }}\` ブランチの状態を確認したうえで実装を再開します。"
+            AGENT_ROLE=implementer
+          else
+            BODY="🔧 依頼を確認しました。\`${{ steps.state.outputs.branch }}\` ブランチで調査・実装に着手します。"
+            AGENT_ROLE=implementer
+          fi
+          BODY="$BODY"$'\n\n'"実行ログ: $RUN_URL"$'\n\n<!-- issue-deck-source:claude-issue-dispatch -->'$'\n\n'"<!-- issue-deck-agent:$AGENT_ROLE -->"
+          gh issue comment ${{ steps.state.outputs.issue_number }} --body "$BODY"
+
+      - name: 01.planning を付与する（計画検討着手時）
+        # Claude Codeエージェント自身にラベル付与を委ねるとLLMの実行タイミング・忘れに
+        # 依存してしまうため、他の確実な通知ステップと同じくシェルスクリプトで直接行う。
+        # CLAUDE.mdの運用ルール(01.planningはPlan mode開始時点で付与する)をこのワークフローでも
+        # 保証するためのステップ。
+        if: steps.state.outputs.mode == 'plan'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh issue edit ${{ steps.state.outputs.issue_number }} --add-label "01.planning"
+
+      - name: 計画提示前のコメント数を記録する
+        id: before_plan
+        if: steps.state.outputs.mode == 'plan'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          COUNT="$(gh issue view ${{ steps.state.outputs.issue_number }} --json comments --jq '.comments | length')"
+          echo "comment_count=$COUNT" >> "$GITHUB_OUTPUT"
+
+      - name: Claude Code（計画提示）
+        id: claude_plan
+        if: steps.state.outputs.mode == 'plan'
+        uses: anthropics/claude-code-action@v1
+        env:
+          GH_TOKEN: ${{ github.token }}
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          show_full_output: true
+          claude_args: |
+            --allowedTools "Bash(gh issue view:*),Bash(gh issue comment:*),Bash(gh issue edit:*),Bash(gh pr list:*),Bash(gh api:*),Bash(git ls-remote:*),Bash(git log:*),Bash(curl:*),Read,Grep,Glob"
+            ${{ steps.claude_model.outputs.model_flag }}
+          prompt: |
+            あなたはshopping-listリポジトリの実装エージェントです。Issue #${{ steps.state.outputs.issue_number }} に
+            `21.plan-required` ラベルが付いているため、実装に入る前に計画を提示してください。
+            リポジトリの構成・運用ルールは`CLAUDE.md`に記載されています（DBなし・ビルドなし・
+            npm依存パッケージなしの構成です）。
+
+            ## 最初にやること
+            `gh issue view ${{ steps.state.outputs.issue_number }} --comments` でIssueの最新の本文・ラベル・
+            コメント（過去に提示した計画やそれへのフィードバックを含む）を確認してください。
+
+            ## Issue本文・コメントに画像が含まれる場合
+            issue-deck独自の画像アップロードAPI（`/api/issues/images/...`のURL）で貼り付けられた画像は、
+            GitHub純正の画像CDNではないため自動では読み込めません。計画立案に画像の内容確認が必要な場合は、
+            `curl -o /tmp/<適当なファイル名> "<画像URL>"`で一時ファイルにダウンロードしたうえで、`Read`ツールで
+            そのローカルファイルを開いて内容を確認してください（URLを直接`Read`しても開けません）。
+
+            ## 直近のコメントが質問か、計画の修正依頼かの判定
+            このIssueに既に計画コメント（末尾に`<!-- issue-deck-plan-type:implement -->`または
+            `<!-- issue-deck-plan-type:split -->`マーカーが付いたコメント）が投稿済みの場合、直近の
+            `@claude`コメントはその計画に対する反応です。まず、それが計画の変更を求める「修正依頼」か、
+            単なる「質問・確認」（例:「この方針だとXの場合はどうなる？」）かを判定してください。
+
+            - 単なる質問・確認と判断した場合:
+              - 計画本文は書き直さず、`gh issue comment ${{ steps.state.outputs.issue_number }} --body "..."`
+                で質問への回答のみを簡潔に投稿する。回答コメントの本文末尾には、実装フローの通常コメントと
+                視覚的に区別できるよう`<!-- issue-deck-qa-answer -->`マーカーと、投稿元を示す
+                `<!-- issue-deck-source:claude-issue-dispatch -->`マーカーを必ず付与する
+              - 計画種別マーカー（`<!-- issue-deck-plan-type:... -->`）は付けない（直前の計画のマーカーが
+                そのまま承認判定に使われる想定のため）
+              - 回答コメント投稿後、`gh issue edit ${{ steps.state.outputs.issue_number }} --add-label "00.check-user"`
+                を必ず実行する（既に付いていても無害）。`00.check-user`以外のラベル（`21.plan-required`等）は
+                変更しない
+              - 以下の「やること」「分割するかどうかの判断」の手順は行わず、ここで対応を終了する
+            - 計画の修正が必要と判断した場合、または、このIssueにまだ計画コメントが投稿されていない
+              （今回が初回の計画提示である）場合は、以下の「やること」に従って計画全文を練り直す
+              （または新規に作成する）
+
+            ## やること
+            - リポジトリのコードを調査し、対応方針・変更範囲（触るファイル・追加するファイル）・懸念点を
+              日本語でまとめる
+            - 直前のコメントで計画への修正依頼が来ている場合は、それを踏まえて計画を練り直す
+            - `CLAUDE.md`の「自動マージ不可カテゴリ」に該当する変更（認証・本番設定・Secrets・
+              Notion連携仕様・依存関係の追加等）が含まれる場合は、その旨を懸念点に明記する
+            - 実装範囲が広く、GitHub Actions上の1回の実装ステップで最後まで処理しきれない懸念がある
+              場合は、無理に一つの計画に収めようとせず、下記「分割するかどうかの判断」に従って
+              サブIssueへの分割を計画してよい
+            - まとめた計画を `gh issue comment ${{ steps.state.outputs.issue_number }} --body "..."` で
+              Issueにコメント投稿する。コメント本文の末尾に、下記の計画種別マーカーと、このワークフロー
+              実行への追跡用リンク
+              `実行ログ: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}`、
+              投稿元を示す`<!-- issue-deck-source:claude-issue-dispatch -->`マーカーを必ず追記する
+            - 投稿後、`gh issue edit ${{ steps.state.outputs.issue_number }} --add-label "00.check-user"` を実行する
+              （既に付いていても無害なので毎回実行してよい）
+
+            ## 分割するかどうかの判断とマーカー
+            計画コメントの末尾に、判断結果に応じて次のいずれか1つのHTMLコメントマーカーを必ず含めて
+            ください。人間が`00.check-user`を外して承認した後、別のワークフロー実行がこのマーカーを
+            読み取ってそのまま実装するかサブIssueへ分割するかを自動的に振り分けます。
+
+            - このIssueのまま1つのPull Requestとして実装できると判断した場合:
+              `<!-- issue-deck-plan-type:implement -->`
+            - 実装範囲が広く、複数のサブIssueに分割してそれぞれ独立に実装すべきと判断した場合:
+              `<!-- issue-deck-plan-type:split -->`
+              - この場合、計画コメント本文に分割後の各サブIssue案（タイトル案・スコープ・実装順序や
+                依存関係があればそれも）を箇条書きで明記すること
+              - 分割後の1つのサブIssueもなお複雑だと判断される場合、そのサブIssue案の中に
+                「このサブIssueには21.plan-requiredが必要」と書き添えてよい
+
+            ## 迷った場合・調査に行き詰まった場合の振る舞い
+            - 許可されていない操作が拒否される等で調査に行き詰まった場合、それ以上粘らず、その時点で
+              分かっている情報の範囲で計画をまとめてコメント投稿することを最優先する
+              （コメントを一切投稿できないまま終了することが最悪の結果のため）
+
+            ## このステップでは行わないこと
+            - コードの変更・コミット・ブランチ作成・PR作成・Issueの新規作成は一切行わない（計画提示のみ）
+
+            ## 次に起きること
+            人間が計画を確認し、問題なければIssueから `00.check-user` ラベルを外します。それをもって承認と
+            みなし、別のワークフロー実行が、上記マーカーに応じて実装（`implement`）またはサブIssueの
+            作成（`split`）を開始します。
+
+      - name: 計画コメント投稿を検証し、必要ならフォールバックする
+        if: always() && steps.state.outputs.mode == 'plan'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          WORKFLOW_PAT: ${{ secrets.WORKFLOW_PAT }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          ISSUE_NUMBER: ${{ steps.state.outputs.issue_number }}
+          RETRY_ATTEMPT: ${{ steps.state.outputs.retry_attempt }}
+          APP_BASE_URL: ${{ vars.APP_BASE_URL }}
+          REPO: ${{ github.repository }}
+          CLAUDE_STEP_OUTCOME: ${{ steps.claude_plan.outcome }}
+          # APP_BASE_URL未設定・API到達不可等でリポジトリ共通のAUTO_RETRY_LIMITを取得できない
+          # 環境でも、一過性障害(ERROR_TYPE=transient)と判定した場合にだけ適用する最低限の
+          # リトライ回数。一過性のGitHub API障害はリトライで解消する可能性が高い一方、
+          # 恒常的な障害(ツール権限拒否等)はリトライしても解消しないため区別する。
+          TRANSIENT_FALLBACK_RETRY_LIMIT: 2
+        run: |
+          set -e
+          AFTER_COUNT="$(gh issue view "$ISSUE_NUMBER" --json comments --jq '.comments | length')"
+          BEFORE_COUNT="${{ steps.before_plan.outputs.comment_count }}"
+          : "${BEFORE_COUNT:=0}"
+          if [ "$AFTER_COUNT" -gt "$BEFORE_COUNT" ]; then
+            echo "新規コメントを確認できたため計画提示は完了とみなします（投稿前: $BEFORE_COUNT 件, 投稿後: $AFTER_COUNT 件）"
+            exit 0
+          fi
+
+          echo "新規コメントが確認できないため、エラー種別の判定と自動リトライの可否を確認します（投稿前後とも $BEFORE_COUNT 件）"
+
+          # Claude Code（計画提示）ステップ自体がfailureで終了した場合、Claude起動前後のGitHub API
+          # 呼び出しエラー等、一過性の可能性が高いインフラ障害と判断する。ステップ自体はsuccessで
+          # 終了したが新規コメントが確認できない場合は、Claude内部でのツール権限拒否等、リトライしても
+          # 解消しない可能性が高い恒常的な障害と判断する。
+          if [ "$CLAUDE_STEP_OUTCOME" = "failure" ]; then
+            ERROR_TYPE=transient
+          else
+            ERROR_TYPE=persistent
+          fi
+          echo "エラー種別判定: $ERROR_TYPE（Claude Codeステップの終了状態: $CLAUDE_STEP_OUTCOME）"
+
+          # issue-deckが持つ全リポジトリ共通の自動リトライ上限を読み取り専用APIから取得する。
+          # APP_BASE_URL未設定・API到達不可・レスポンス不正のいずれの場合も安全側(リトライなし=0)に
+          # フォールバックする。
+          AUTO_RETRY_LIMIT=0
+          if [ -z "$APP_BASE_URL" ]; then
+            echo "::warning::APP_BASE_URLが未設定のため、自動リトライ上限の取得をスキップし0件にフォールバックしました"
+          else
+            CURL_EXIT=0
+            RESPONSE="$(curl -fsS "$APP_BASE_URL/api/settings/auto-retry" 2>/dev/null)" || CURL_EXIT=$?
+            if [ "$CURL_EXIT" -ne 0 ]; then
+              echo "::warning::APP_BASE_URL(${APP_BASE_URL})への疎通に失敗したため、自動リトライ上限の取得に失敗し0件にフォールバックしました（curl exit code: ${CURL_EXIT}）"
+            elif [ -z "$RESPONSE" ]; then
+              echo "::warning::APP_BASE_URL(${APP_BASE_URL})からのレスポンスが空だったため、自動リトライ上限の取得に失敗し0件にフォールバックしました"
+            else
+              AUTO_RETRY_LIMIT="$(printf '%s' "$RESPONSE" | jq -r '.autoRetryLimit // 0' 2>/dev/null)" || true
+              case "$AUTO_RETRY_LIMIT" in
+                ''|*[!0-9]*)
+                  echo "::warning::APP_BASE_URL(${APP_BASE_URL})からのレスポンスのJSONパースに失敗したため、自動リトライ上限の取得に失敗し0件にフォールバックしました（レスポンス: ${RESPONSE}）"
+                  AUTO_RETRY_LIMIT=0
+                  ;;
+              esac
+            fi
+          fi
+          case "$AUTO_RETRY_LIMIT" in ''|*[!0-9]*) AUTO_RETRY_LIMIT=0 ;; esac
+
+          # APP_BASE_URL未設定等でAUTO_RETRY_LIMITを取得できない環境でも、一過性障害と判定した
+          # 場合は最低限のリトライ回数を保証する。
+          if [ "$ERROR_TYPE" = "transient" ] && [ "$AUTO_RETRY_LIMIT" -lt "$TRANSIENT_FALLBACK_RETRY_LIMIT" ]; then
+            AUTO_RETRY_LIMIT="$TRANSIENT_FALLBACK_RETRY_LIMIT"
+          fi
+
+          NEXT_ATTEMPT=$((RETRY_ATTEMPT + 1))
+          if [ "$NEXT_ATTEMPT" -le "$AUTO_RETRY_LIMIT" ]; then
+            echo "自動リトライを試みます（${NEXT_ATTEMPT}/${AUTO_RETRY_LIMIT}回目）"
+            if GH_TOKEN="$WORKFLOW_PAT" gh workflow run claude-issue-dispatch.yml --repo "$REPO" --ref develop -f issue_number="$ISSUE_NUMBER" -f retry_attempt="$NEXT_ATTEMPT"; then
+              RETRY_BODY="🔁 計画提示ステップの完了を確認できなかったため、自動的に再実行します（${NEXT_ATTEMPT}/${AUTO_RETRY_LIMIT}回目）。"
+              RETRY_BODY="$RETRY_BODY"$'\n\n'"実行ログ: $RUN_URL"$'\n\n<!-- issue-deck-source:claude-issue-dispatch -->'$'\n\n<!-- issue-deck-agent:guide -->'
+              gh issue comment "$ISSUE_NUMBER" --body "$RETRY_BODY"
+              exit 0
+            fi
+            echo "自動リトライの起動（gh workflow run）に失敗しました。WORKFLOW_PATに必要な権限（Actions: write相当）が不足している可能性があります。従来どおりのフォールバック通知に切り替えます"
+          fi
+
+          echo "自動リトライを行わないため、フォールバックコメントを投稿します（エラー種別: $ERROR_TYPE）"
+          if [ "$ERROR_TYPE" = "transient" ]; then
+            FALLBACK_BODY=$'⚠️ 計画の自動提示に失敗した可能性があります。Claude Code起動前後のGitHub API呼び出しが一時的に失敗した等、一過性の障害が発生したと考えられます。\n\nお手数ですが、`@claude` とコメントして再実行してください。再実行すれば解消する可能性があります。'
+          else
+            FALLBACK_BODY=$'⚠️ 計画の自動提示に失敗した可能性があります。コード調査中に許可されていない操作が拒否される、または想定外のエラーが発生する等の理由で、計画コメントの投稿まで到達できなかったと考えられます。\n\nお手数ですが、`@claude` とコメントして再実行するか、必要であれば計画フェーズを経ずに人間が直接対応方針を指示してください。'
+          fi
+          if [ "$RETRY_ATTEMPT" -gt 0 ]; then
+            FALLBACK_BODY="$FALLBACK_BODY"$'\n\n'"自動リトライを${RETRY_ATTEMPT}回試みましたが解決しませんでした。"
+          fi
+          FALLBACK_BODY="$FALLBACK_BODY"$'\n\n'"実行ログ: $RUN_URL"$'\n\n<!-- issue-deck-source:claude-issue-dispatch -->'$'\n\n<!-- issue-deck-fallback-notice -->'
+          gh issue comment "$ISSUE_NUMBER" --body "$FALLBACK_BODY"
+          gh issue edit "$ISSUE_NUMBER" --add-label "00.check-user"
+
+      - name: 分割前のコメント数を記録する
+        id: before_split
+        if: steps.state.outputs.mode == 'split'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          COUNT="$(gh issue view ${{ steps.state.outputs.issue_number }} --json comments --jq '.comments | length')"
+          echo "comment_count=$COUNT" >> "$GITHUB_OUTPUT"
+
+      - name: Claude Code（分割）
+        if: steps.state.outputs.mode == 'split'
+        uses: anthropics/claude-code-action@v1
+        env:
+          GH_TOKEN: ${{ github.token }}
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          claude_args: |
+            --allowedTools "Bash(gh issue view:*),Bash(gh issue comment:*),Bash(gh issue create:*),Bash(gh issue close:*)"
+            ${{ steps.claude_model.outputs.model_flag }}
+          prompt: |
+            あなたはshopping-listリポジトリの実装エージェントです。Issue #${{ steps.state.outputs.issue_number }} は、
+            人間が承認済みの計画（直前の`<!-- issue-deck-plan-type:split -->`マーカー付きコメント）により、
+            このIssueのまま実装せず複数のサブIssueに分割することが決まっています。この分割を実行してください。
+
+            ## 最初にやること
+            `gh issue view ${{ steps.state.outputs.issue_number }} --comments` でIssueの本文と、承認済みの
+            計画コメント（分割後の各サブIssue案）を確認してください。
+
+            ## やること
+            - 計画コメントに記載されたサブIssue案それぞれについて、
+              `gh issue create --title "..." --body "..."` でサブIssueを作成する
+              - 本文には「分割元: #${{ steps.state.outputs.issue_number }}」を含め、元Issueを読み返さなくても
+                単独で着手できる程度に、対応するスコープの背景・要件を書く
+              - 計画コメントでそのサブIssueにも`21.plan-required`が必要と書かれている場合は
+                `--label "21.plan-required"`を付ける
+              - 元Issueに`23.preview-required`が付いており、かつそのサブIssueが画面に関わる変更を
+                含む場合は、そのラベルを引き継ぐ
+              - 一度に作成するサブIssueは目安として6件程度までとする。計画がそれを超える数の分割を
+                提案している場合、無理に全部作らず作成できた分にとどめ、残りは後述の親Issueコメントで
+                「追って検討が必要」である旨を明記する
+            - 全て作成したら `gh issue comment ${{ steps.state.outputs.issue_number }} --body "..."` で
+              元Issueに作成したサブIssue一覧（`#番号`の形式で書けば自動的にリンクされる）をコメントする。
+              コメント末尾に実行ログのリンク
+              `実行ログ: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}`、
+              投稿元を示す`<!-- issue-deck-source:claude-issue-dispatch -->`マーカー、役割を示す
+              `<!-- issue-deck-agent:splitter -->`マーカーを必ず追記する
+            - 最後に `gh issue close ${{ steps.state.outputs.issue_number }} --reason "not planned"` を実行し、
+              元Issueをクローズする
+
+            ## 迷った場合・行き詰まった場合の振る舞い
+            - 許可されていない操作が拒否される等で行き詰まった場合、それ以上粘らず、その時点で作成できた
+              サブIssue（0件でもよい）と状況を元Issueにコメントすることを最優先する。この場合、元Issueの
+              クローズは行わず、人間が状況を確認できるよう開いたままにする
+
+            ## このステップでは行わないこと
+            - サブIssueへの`@claude`コメント投稿など、サブIssueの実装を自動的に開始させる操作は行わない
+              （サブIssueの着手はこれまでどおり人間が個別に`@claude`とコメントして起動する）
+            - コードの変更・コミット・ブランチ作成・PR作成は一切行わない
+
+      - name: 分割結果を検証し、必要ならフォールバックする
+        # 計画コメント投稿の検証と同じ考え方。サブIssue作成後の親Issueコメントが確認できない場合、
+        # 途中で行き詰まった可能性があるためフォールバック通知を投稿する。
+        if: always() && steps.state.outputs.mode == 'split'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -e
+          AFTER_COUNT="$(gh issue view ${{ steps.state.outputs.issue_number }} --json comments --jq '.comments | length')"
+          BEFORE_COUNT="${{ steps.before_split.outputs.comment_count }}"
+          : "${BEFORE_COUNT:=0}"
+          if [ "$AFTER_COUNT" -gt "$BEFORE_COUNT" ]; then
+            echo "新規コメントを確認できたため分割の完了または途中経過の報告は行われたとみなします（投稿前: $BEFORE_COUNT 件, 投稿後: $AFTER_COUNT 件）"
+            exit 0
+          fi
+
+          echo "新規コメントが確認できないため、フォールバックコメントを投稿します（投稿前後とも $BEFORE_COUNT 件）"
+          FALLBACK_BODY=$'⚠️ Issueの分割に失敗した可能性があります。サブIssueの作成中に許可されていない操作が拒否される、または想定外のエラーが発生する等の理由で、コメント投稿まで到達できなかったと考えられます。\n\nお手数ですが、`@claude` とコメントして再実行するか、必要であれば人間が直接Issueを分割してください。'
+          FALLBACK_BODY="$FALLBACK_BODY"$'\n\n'"実行ログ: $RUN_URL"$'\n\n<!-- issue-deck-source:claude-issue-dispatch -->'$'\n\n<!-- issue-deck-agent:splitter -->'
+          gh issue comment ${{ steps.state.outputs.issue_number }} --body "$FALLBACK_BODY"
+          gh issue edit ${{ steps.state.outputs.issue_number }} --add-label "00.check-user"
+
+      - name: 質問前のコメント数を記録する
+        id: before_ask
+        if: steps.state.outputs.mode == 'ask'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          COUNT="$(gh issue view ${{ steps.state.outputs.issue_number }} --json comments --jq '.comments | length')"
+          echo "comment_count=$COUNT" >> "$GITHUB_OUTPUT"
+
+      - name: Claude Code（質問応答）
+        # コードやIssueの状態を一切変更しない読み取り専用モード。ラベル変更・ブランチ作成・
+        # コミット・PR作成は許可しない（allowedToolsにEdit/Write/Bash(git ...)を含めない）。
+        if: steps.state.outputs.mode == 'ask'
+        uses: anthropics/claude-code-action@v1
+        env:
+          GH_TOKEN: ${{ github.token }}
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          show_full_output: true
+          claude_args: |
+            --allowedTools "Bash(gh issue view:*),Bash(gh issue comment:*),Bash(gh pr list:*),Bash(gh api:*),Bash(git ls-remote:*),Bash(git log:*),Bash(curl:*),Read,Grep,Glob"
+            ${{ steps.claude_model.outputs.model_flag }}
+          prompt: |
+            あなたはshopping-listリポジトリについて質問に答えるエージェントです。Issue #${{ steps.state.outputs.issue_number }} に
+            投稿された、`@claude 質問: ` で始まる直近のコメントへの回答のみを行ってください。
+            コード変更・コミット・ブランチ作成・PR作成・ラベル操作は一切行いません（許可されたツールにも
+            含まれていません）。リポジトリの構成・運用ルールは`CLAUDE.md`に記載されています。
+
+            ## 最初にやること
+            `gh issue view ${{ steps.state.outputs.issue_number }} --comments` でIssueの本文・ラベル・
+            コメント履歴を確認し、直近の `@claude 質問: ` で始まるコメントから質問内容（プレフィックスに
+            続く部分）を読み取ってください。
+
+            ## Issue本文・コメントに画像が含まれる場合
+            issue-deck独自の画像アップロードAPI（`/api/issues/images/...`のURL）で貼り付けられた画像は、
+            GitHub純正の画像CDNではないため自動では読み込めません。回答に画像の内容確認が必要な場合は、
+            `curl -o /tmp/<適当なファイル名> "<画像URL>"`で一時ファイルにダウンロードしたうえで、`Read`ツールで
+            そのローカルファイルを開いて内容を確認してください（URLを直接`Read`しても開けません）。
+
+            ## やること
+            - 必要に応じてリポジトリのコード（`Read`ツール）やgit履歴（`git log`）、関連するPull Request
+              （`gh pr list`）を調査し、質問に日本語で回答する
+            - `gh issue comment ${{ steps.state.outputs.issue_number }} --body "..."` で回答をコメント投稿する。
+              コメント本文の先頭を`@claude`にしない（このワークフロー自身の再トリガーを防ぐため）。
+              コメント末尾に、実装フローの通常コメントと視覚的に区別できるよう
+              `<!-- issue-deck-qa-answer -->`マーカーと、投稿元を示す
+              `<!-- issue-deck-source:claude-issue-dispatch -->`マーカー、このワークフロー実行への
+              追跡用リンク`実行ログ: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}`
+              を必ず追記する
+
+            ## 迷った場合・調査に行き詰まった場合の振る舞い
+            - 許可されていない操作が拒否される等で調査に行き詰まった場合、それ以上粘らず、その時点で
+              分かっている情報の範囲で回答をコメント投稿することを最優先する
+              （コメントを一切投稿できないまま終了することが最悪の結果のため）
+
+            ## このステップでは行わないこと
+            - コードの変更・コミット・ブランチ作成・PR作成・Issueのラベル変更・状態変更は一切行わない
+
+      - name: 質問への回答を検証し、必要ならフォールバックする
+        if: always() && steps.state.outputs.mode == 'ask'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -e
+          AFTER_COUNT="$(gh issue view ${{ steps.state.outputs.issue_number }} --json comments --jq '.comments | length')"
+          BEFORE_COUNT="${{ steps.before_ask.outputs.comment_count }}"
+          : "${BEFORE_COUNT:=0}"
+          if [ "$AFTER_COUNT" -gt "$BEFORE_COUNT" ]; then
+            echo "新規コメントを確認できたため質問への回答は完了とみなします（投稿前: $BEFORE_COUNT 件, 投稿後: $AFTER_COUNT 件）"
+            exit 0
+          fi
+
+          echo "新規コメントが確認できないため、フォールバックコメントを投稿します（投稿前後とも $BEFORE_COUNT 件）"
+          FALLBACK_BODY=$'⚠️ 質問への回答に失敗した可能性があります。調査中に許可されていない操作が拒否される、または想定外のエラーが発生する等の理由で、回答コメントの投稿まで到達できなかったと考えられます。\n\nお手数ですが、もう一度「Claudeに質問する」から質問し直してください。'
+          FALLBACK_BODY="$FALLBACK_BODY"$'\n\n'"実行ログ: $RUN_URL"$'\n\n<!-- issue-deck-source:claude-issue-dispatch -->'$'\n\n<!-- issue-deck-agent:guide -->'
+          gh issue comment ${{ steps.state.outputs.issue_number }} --body "$FALLBACK_BODY"
+
+      - name: 実装前のコメント数を記録する
+        id: before_implement
+        # additionalモード(PR未作成の詰まった状態からの再開を含む)も、implementと同様に
+        # 途中で行き詰まって無言のまま終了しうるため、フォールバック検証の対象に含める。
+        if: steps.state.outputs.mode == 'implement' || steps.state.outputs.mode == 'additional'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          COUNT="$(gh issue view ${{ steps.state.outputs.issue_number }} --json comments --jq '.comments | length')"
+          echo "comment_count=$COUNT" >> "$GITHUB_OUTPUT"
+
+      - name: 既存ブランチをcheckoutする（追加対応時）
+        # 実装着手直前に都度最新化する。他エージェント・人間による手動コミットとの競合を避けるため、
+        # 先にcheckoutした develop の内容は使わず、ここで改めて既存ブランチへ切り替える。
+        if: steps.state.outputs.mode == 'additional'
+        env:
+          GH_TOKEN: ${{ secrets.WORKFLOW_PAT }}
+        run: |
+          set -e
+          git fetch origin "${{ steps.state.outputs.branch }}"
+          git checkout "${{ steps.state.outputs.branch }}"
+
+      - name: Setup Node.js
+        # 実装エージェントが`npm run check`（node --checkによる構文チェック）を実行するために使う。
+        # 依存パッケージが無いため`npm install`は不要。バージョンはci.ymlと揃える。
+        if: steps.state.outputs.mode == 'implement' || steps.state.outputs.mode == 'additional'
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20.19"
+
+      - name: 24.screenshot-required が未対応であることを通知する
+        # 本リポジトリは全画面がSupabase Auth + Google OAuthログインの背後にあり、issue-deckの
+        # CIログインバイパス機構(src/lib/ci-auth-bypass.ts相当)とNotion APIのスタブが存在しない
+        # ため、スクリーンショットの無人撮影が成立しない（issue-deckのdocs/cross-repo-automation.md
+        # のケーススタディ参照）。ラベルが付いていた場合は撮影を試みず、23.preview-requiredと同様に
+        # 人間の画面確認を待つ運用へ倒すことを、LLMの実行に依存しないシェルステップで明示的に伝える。
+        if: (steps.state.outputs.mode == 'implement' || steps.state.outputs.mode == 'additional') && steps.state.outputs.screenshot_required == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -e
+          BODY='ℹ️ このIssueには`24.screenshot-required`が付いていますが、本リポジトリはスクリーンショットの無人撮影に未対応です（全画面がGoogleログインの背後にあり、CIログインバイパスとNotion APIのスタブが未実装のため）。'
+          BODY="$BODY"$'\n\n''代わりに`23.preview-required`と同じ扱いとし、実装・pushまで行ったうえで人間の画面確認を待って停止します。'
+          BODY="$BODY"$'\n\n<!-- issue-deck-source:claude-issue-dispatch -->'$'\n\n<!-- issue-deck-agent:guide -->'
+          gh issue comment ${{ steps.state.outputs.issue_number }} --body "$BODY"
+
+      - name: 02.wip を付与する（実装着手時）
+        # Claude Codeエージェント自身にラベル付与を委ねるとLLMの実行タイミング・忘れに
+        # 依存してしまうため、実装着手前にシェルスクリプトで直接・確実に付与する。
+        # 計画検討中（01.planning）から実装着手に進む場合に備え、両分岐とも01.planningの除去も
+        # 併せて行う（付いていなくても無害）。
+        if: steps.state.outputs.mode == 'implement' || steps.state.outputs.mode == 'additional'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -e
+          if [ "${{ steps.state.outputs.mode }}" = "additional" ]; then
+            gh issue edit ${{ steps.state.outputs.issue_number }} --add-label "02.wip" --remove-label "03.d:marge" --remove-label "01.planning"
+          else
+            gh issue edit ${{ steps.state.outputs.issue_number }} --add-label "02.wip" --remove-label "01.planning"
+          fi
+
+      - name: Claude Code（実装・PR作成）
+        id: claude_implement
+        if: steps.state.outputs.mode == 'implement' || steps.state.outputs.mode == 'additional'
+        uses: anthropics/claude-code-action@v1
+        env:
+          # .github/workflows/配下を変更するIssueでもgit pushが拒否されないようにする認証は、
+          # 前段の「pushの認証をWORKFLOW_PATに固定する」ステップが設定するremote.origin.pushurl
+          # で完結しており、このステップのGH_TOKEN/github_tokenには依存しない(issue-deck #662)。
+          # そのため既定のGITHUB_TOKENをそのまま使い、Issue/PRへのコメント投稿者も
+          # github-actions[bot]になる。
+          GH_TOKEN: ${{ github.token }}
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          show_full_output: true
+          claude_args: |
+            --allowedTools "Edit,Write,Read,Grep,Glob,Bash(git:*),Bash(gh:*),Bash(npm:*),Bash(node:*),Bash(curl:*)"
+            ${{ steps.claude_model.outputs.model_flag }}
+          prompt: |
+            あなたはshopping-listリポジトリのIssueごとの実装エージェントです。GitHub Actions上で無人実行されて
+            おり、対応するIssueは #${{ steps.state.outputs.issue_number }} のみです。このワークフロー実行の
+            モードは `${{ steps.state.outputs.mode }}` です。
+
+            リポジトリの構成・運用ルール（ブランチ運用・自動マージ不可カテゴリ・依存関係追加の判断基準・
+            changelogの書き方等）は`CLAUDE.md`に記載されています。**最初に必ず読んでください。**
+            要点: DBなし・ビルドなし・npm依存パッケージなし。検証は`npm run check`のみ
+            （`node --check`による構文チェック。テスト・型チェック・ビルドは存在しません）。
+
+            - `implement`（新規実装）: 現在のワークツリーは `develop` の最新コミットをチェックアウトした
+              状態です。新しく作業ブランチを作成し、新規にPull Requestを作成します。
+            - `additional`（既存ブランチへの追加対応）: このIssueに対応する作業ブランチ
+              `${{ steps.state.outputs.branch }}` が既に存在し、現在のワークツリーは既にそのブランチを
+              checkout済みです。新規ブランチは作成しません。develop向けPull RequestのURLは
+              `${{ steps.state.outputs.pr_url }}` です（空の場合は後述のとおりPR未作成の再開ケースです）。
+              - PR作成済み（上記URLが空でない場合）: 直近のIssueへの`@claude`コメントへの対応です。まず、
+                そのコメントが「コード変更を伴う追加の実装依頼」か「単なる質問・確認」かを判定してください。
+                - 単なる質問・確認と判断した場合: コードは一切変更せず、コミット・pushは行いません。
+                  `gh issue comment ${{ steps.state.outputs.issue_number }} --body "..."`
+                  で質問への回答のみを簡潔に投稿します（PR側ではなくIssue側のスレッドに投稿することで、
+                  実装フローの通常コメントと同じ場所で視覚的に区別できるようにするため）。回答コメントの
+                  本文末尾には`<!-- issue-deck-qa-answer -->`マーカーと、投稿元を示す
+                  `<!-- issue-deck-source:claude-issue-dispatch -->`マーカーを必ず付与してください。
+                  なお、このステップの直前のシェルステップで既に`02.wip`が付与され`03.d:marge`が
+                  外されているため、状態を元に戻すために
+                  `gh issue edit ${{ steps.state.outputs.issue_number }} --add-label "03.d:marge" --add-label "00.check-user" --remove-label "02.wip"`
+                  を実行してください（`00.check-user`以外の他のラベルは変更しません）。以降の「責務」
+                  「画面確認について」の手順は行わず、ここで対応を終了してください。
+                - コード変更が必要な依頼と判断した場合: それを踏まえて追加コミットし、新規PRは作らず
+                  既存PRにコメントで報告します（以下の「責務」に従って進めてください）。
+              - PR未作成（上記URLが空の場合）: 前回の実装試行がPR作成に至らないまま（権限拒否・
+                エラー等で）終了した可能性があります。まず`git log develop..HEAD --stat`・`git status`・
+                `git diff develop`で現在のブランチの状態を確認してください。
+                - 既にコミットされた変更が把握できる内容であれば、それを踏まえて実装を続行して
+                  ください（ゼロからやり直す必要はありません）。完了したら新規にPull Requestを
+                  作成してください（`implement`と同じ手順）。
+                - 続行が難しいほど中途半端・矛盾した状態だと判断した場合は、無理に修正しようと
+                  せず、現在の状態を`gh issue comment`で報告し
+                  `gh issue edit ${{ steps.state.outputs.issue_number }} --add-label "00.check-user"`
+                  を実行して停止してください（ブランチの削除・作り直しは人間の明示操作でのみ行われ、
+                  このワークフローが自動で行うことはありません）。
+
+            ## 最初にやること
+            - `CLAUDE.md`を読む
+            - `gh issue view ${{ steps.state.outputs.issue_number }} --comments` でIssueの最新の本文・
+              ラベル・コメントを確認する（`implement`で`21.plan-required`が付いている場合、承認済みの
+              計画がIssueコメントに投稿されているはずなので、それに沿って実装する。`additional`でPR
+              作成済みの場合は、直近の`@claude`コメントの内容を踏まえて対応する。PR未作成の再開の
+              場合は、過去のコメント履歴や既存のコミットから前回どこまで実装が進んでいたかも把握する）
+              （`02.wip`ラベルの付与・`03.d:marge`からの付け替えは、このステップの前段のシェルステップで
+              既に完了しているため、ここで行う必要はない）
+            - `implement`の場合のみ`git checkout -b ${{ steps.state.outputs.branch }}`で作業ブランチを
+              作成する（`additional`の場合は既にcheckout済みのため不要）
+
+            ## Issue本文・コメントに画像が含まれる場合
+            issue-deck独自の画像アップロードAPI（`/api/issues/images/...`のURL）で貼り付けられた画像は、
+            GitHub純正の画像CDNではないため自動では読み込めません。実装内容の把握に画像の内容確認が必要な
+            場合は、`curl -o /tmp/<適当なファイル名> "<画像URL>"`で一時ファイルにダウンロードしたうえで、
+            `Read`ツールでそのローカルファイルを開いて内容を確認してください（URLを直接`Read`しても開けません）。
+
+            ## コメント投稿・PR作成時のトークンについて
+            このステップの既定の`GH_TOKEN`は、投稿者が`github-actions[bot]`になる既定のGITHUB_TOKEN
+            です。以下の「責務」に記載する`gh issue comment` / `gh pr create` / `gh pr comment` /
+            `gh issue edit`は、すべてトークンを上書きせずそのまま実行してください。
+            `.github/workflows/`配下を含む`git push`の認証は、このステップより前段で設定済みの
+            push専用URL（`remote.origin.pushurl`、workflow書き込み権限を持つPAT）で別途完結して
+            いるため、このステップのGH_TOKENには依存しません。`git push origin <ブランチ名>`は
+            リモート名`origin`のまま実行してください（push時だけ自動的にPATが使われます）。
+
+            ## コメント投稿元マーカーについて
+            このステップ全体を通じて`gh issue comment`によりIssueへ投稿する全てのコメントの本文末尾に、
+            投稿元を示す`<!-- issue-deck-source:claude-issue-dispatch -->`マーカーを必ず付与してください
+            （`gh pr create` / `gh pr comment`によるPR側への投稿は対象外です）。
+            さらに、上記のうち`<!-- issue-deck-qa-answer -->`マーカーを付与する質問への回答コメントを
+            除く全てのコメントには、役割を示す`<!-- issue-deck-agent:implementer -->`マーカーも
+            あわせて付与してください。
+
+            ## 責務
+            - Issueの要件を実装する
+            - `npm run check`を実行し、構文エラーが無いことを確認する
+            - 画面で体感できる変更を行った場合は、`frontend/changelog.js`への追記の必要性を検討する
+              （`CLAUDE.md`の「更新履歴（changelog）」参照。内部実装のみの変更では追記しない）
+            - 変更をコミットする（コミットメッセージは日本語、1〜2文で変更の目的を書き、末尾に
+              `#${{ steps.state.outputs.issue_number }}` を付ける。Authorは
+              `Claude Code <claude-code@example.com>` にする）
+            - ブランチをpushする
+              - `implement`の場合: `git push -u origin ${{ steps.state.outputs.branch }}`
+              - `additional`の場合: `git push origin ${{ steps.state.outputs.branch }}`（既に追跡設定済み
+                のため`-u`は不要）。pushが拒否された場合は
+                `git pull --rebase origin ${{ steps.state.outputs.branch }}`で追随し、1回だけリトライする。
+                それでも失敗する場合はそれ以上リトライせず、
+                `gh issue comment ${{ steps.state.outputs.issue_number }}`
+                で他の変更と競合したため追加対応を中断した旨を人間に報告して停止する
+            - Pull Requestを作成・更新する
+              - `implement`の場合、または`additional`でPRがまだ無い場合:
+                `gh pr create --base develop --head ${{ steps.state.outputs.branch }}`で
+                `develop`向けPull Requestを作成する（タイトル・本文は日本語。本文には対応Issue・実装内容・
+                テスト内容・確認方法・注意点を記載する。developマージ時点ではissueをcloseしない運用のため
+                `closes #番号` / `fixes #番号`は使わず、`#${{ steps.state.outputs.issue_number }}`のように
+                番号のみ記載する）
+              - `additional`でPRが既にある場合: 新規PRは作成しない。既存のPull Request
+                （${{ steps.state.outputs.pr_url }}）に`gh pr comment`で、
+                今回追加でpushしたコミットの内容を日本語で要約して投稿する
+            - 完了したら`gh issue edit ${{ steps.state.outputs.issue_number }} --add-label "03.d:marge" --remove-label "02.wip"`
+              を実行する（`additional`の場合も同じコマンドで`02.wip`↔`03.d:marge`の付け替えを閉じる。
+              `00.check-user`には触れない。`.github/workflows/issue-labels.yml`が自動発火する可能性が
+              あるが、当てにせず必ず自分でこのコマンドを実行すること）
+            - 最後に `gh issue comment ${{ steps.state.outputs.issue_number }} --body "..."`
+              で対応完了の報告コメントをIssueに投稿する（無人実行のため、この報告が使用者にとって唯一の
+              完了確認手段になる）。新規にPRを作成した場合はそのURL、既存PRにコメントした場合は追加
+              コミットした旨と対象PR（${{ steps.state.outputs.pr_url }}）のURLに加えて、どのような変更・
+              追加対応を行ったかの要約（触ったファイルや対応内容が使用者に伝わる程度の箇条書き）を
+              日本語で含めること
+
+            ## 画面確認について
+            このリポジトリでは、スクリーンショットの無人撮影に未対応です（全画面がSupabase Auth +
+            Google OAuthログインの背後にあり、CIログインバイパス機構とNotion APIのスタブが存在しない
+            ため）。そのため`24.screenshot-required`が付いている場合も撮影は試みず、
+            `23.preview-required`と同じ扱いにしてください。
+
+            - Issueに`23.preview-required`または`24.screenshot-required`が付いている場合:
+              実装・構文チェックまで終えた時点で上記の完了処理（新規PR作成またはPRコメント投稿）を行わず、
+              ブランチのpushまでは行ったうえで、代わりに
+              `gh issue edit ${{ steps.state.outputs.issue_number }} --add-label "00.check-user"`を実行し
+              （`02.wip`はそのままにし`03.d:marge`への付け替えは行わない）、実装内容の要約と「画面確認が
+              必要なためユーザーの確認を待っています」旨を`gh issue comment`で投稿して停止してください。
+              このコメントに、人間が手元でブランチをcheckoutして開発サーバーを起動する手順もあわせて
+              記載してください。無人実行では実際にdevサーバーを起動できないため、以下の案内を含めます。
+              ・起動コマンド: `PORT=<ポート> op run --env-file=.env.tpl -- npm run dev`
+              　（`<ポート>`はポート割り当て規約 `4000 + Issue番号` に従い
+              　${{ steps.state.outputs.issue_number }} 番のIssueでは下記URLの値になります）
+              ・`http://localhost:<ポート>`
+              ・`http://<WSLまたはLANのIPアドレス>.sslip.io:<ポート>`（同一LAN上の別端末から確認する
+              　場合。IPアドレスは人間が手元の環境に合わせて読み替える）
+              ・Googleログインが必須のため、上記ポートの`/auth/callback`がSupabaseのRedirect URLsに
+              　登録されている必要がある旨も添える
+              - 新規にPRを作成する予定だった場合の文言例:「ブランチ `${{ steps.state.outputs.branch }}` の
+                内容を確認のうえ、問題なければ手動でPRを作成してください」
+              - 既存PRにコメントする予定だった場合の文言例:「ブランチ `${{ steps.state.outputs.branch }}`
+                に追加コミットをpushしました。Pull Request（${{ steps.state.outputs.pr_url }}）の内容を
+                確認してください」
+              コメント末尾に、このワークフロー実行への追跡用リンクとして
+              `実行ログ: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}`
+              を必ず追記する
+
+            - 上記いずれのラベルも付いていない場合は、通常どおり完了処理まで進めてください
+
+            ## 禁止事項
+            - `main` / `develop` への直接コミット・push
+            - 他Issueのブランチの編集
+            - 不要なforce push
+            - 自分が作成したPull Requestの自己マージ
+            - 依存関係（npmパッケージ）の追加（必要と判断した場合は追加せず、`00.check-user`を付与して
+              Issueコメントで相談する。`CLAUDE.md`参照）
+
+            ## コミット・PRの書き方
+            - コミットメッセージ・PRタイトル・PR本文は英語ではなく日本語で書く
+            - PR本文の見出し（Summary/Test planなど）は英語でもよいが、説明文は日本語で書く
+
+      - name: 実装結果を検証し、完了・待ち状態が確認できない場合はフォールバック通知する
+        # Claude Codeエージェントに完了報告コメントの投稿を委ねるだけだと、途中でエラー終了した場合や
+        # 許可されていない操作で行き詰まった場合に「どうなったか」が使用者に一切伝わらない恐れがある。
+        # そのため計画コメントの検証と同じ考え方で、後続のステップとして独立に結果を確認する。
+        if: always() && (steps.state.outputs.mode == 'implement' || steps.state.outputs.mode == 'additional')
+        env:
+          GH_TOKEN: ${{ github.token }}
+          WORKFLOW_PAT: ${{ secrets.WORKFLOW_PAT }}
+          RETRY_ATTEMPT: ${{ steps.state.outputs.retry_attempt }}
+          APP_BASE_URL: ${{ vars.APP_BASE_URL }}
+          REPO: ${{ github.repository }}
+          CLAUDE_STEP_OUTCOME: ${{ steps.claude_implement.outcome }}
+          TRANSIENT_FALLBACK_RETRY_LIMIT: 2
+        run: |
+          set -e
+          BRANCH="${{ steps.state.outputs.branch }}"
+          ISSUE_NUMBER="${{ steps.state.outputs.issue_number }}"
+
+          AFTER_COUNT="$(gh issue view "$ISSUE_NUMBER" --json comments --jq '.comments | length')"
+          BEFORE_COUNT="${{ steps.before_implement.outputs.comment_count }}"
+          : "${BEFORE_COUNT:=0}"
+          if [ "$AFTER_COUNT" -gt "$BEFORE_COUNT" ]; then
+            echo "新規コメントを確認できたため、完了または待ち状態の通知は行われたとみなします（投稿前: $BEFORE_COUNT 件, 投稿後: $AFTER_COUNT 件）"
+            exit 0
+          fi
+
+          PR_URL="$(gh pr list --head "$BRANCH" --state all --json url --jq '.[0].url // empty' 2>/dev/null || true)"
+          if [ -n "$PR_URL" ]; then
+            echo "コメントは無いがPRの存在を確認できたため、フォールバックとして完了報告コメントを投稿します: $PR_URL"
+            PR_BODY="$(gh pr view "$BRANCH" --json body --jq '.body // empty' 2>/dev/null || true)"
+            FALLBACK_BODY="✅ 実装が完了し、Pull Requestを確認できました: $PR_URL"
+            if [ -n "$PR_BODY" ]; then
+              FALLBACK_BODY="$FALLBACK_BODY"$'\n\n---\n\n'"$PR_BODY"
+            fi
+            FALLBACK_BODY="$FALLBACK_BODY"$'\n\n<!-- issue-deck-source:claude-issue-dispatch -->'$'\n\n<!-- issue-deck-agent:implementer -->'
+            gh issue comment "$ISSUE_NUMBER" --body "$FALLBACK_BODY"
+            exit 0
+          fi
+
+          RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          echo "新規コメント・PRのいずれも確認できないため、エラー種別の判定と自動リトライの可否を確認します"
+
+          if [ "$CLAUDE_STEP_OUTCOME" = "failure" ]; then
+            ERROR_TYPE=transient
+          else
+            ERROR_TYPE=persistent
+          fi
+          echo "エラー種別判定: $ERROR_TYPE（Claude Codeステップの終了状態: $CLAUDE_STEP_OUTCOME）"
+
+          AUTO_RETRY_LIMIT=0
+          if [ -z "$APP_BASE_URL" ]; then
+            echo "::warning::APP_BASE_URLが未設定のため、自動リトライ上限の取得をスキップし0件にフォールバックしました"
+          else
+            CURL_EXIT=0
+            RESPONSE="$(curl -fsS "$APP_BASE_URL/api/settings/auto-retry" 2>/dev/null)" || CURL_EXIT=$?
+            if [ "$CURL_EXIT" -ne 0 ]; then
+              echo "::warning::APP_BASE_URL(${APP_BASE_URL})への疎通に失敗したため、自動リトライ上限の取得に失敗し0件にフォールバックしました（curl exit code: ${CURL_EXIT}）"
+            elif [ -z "$RESPONSE" ]; then
+              echo "::warning::APP_BASE_URL(${APP_BASE_URL})からのレスポンスが空だったため、自動リトライ上限の取得に失敗し0件にフォールバックしました"
+            else
+              AUTO_RETRY_LIMIT="$(printf '%s' "$RESPONSE" | jq -r '.autoRetryLimit // 0' 2>/dev/null)" || true
+              case "$AUTO_RETRY_LIMIT" in
+                ''|*[!0-9]*)
+                  echo "::warning::APP_BASE_URL(${APP_BASE_URL})からのレスポンスのJSONパースに失敗したため、自動リトライ上限の取得に失敗し0件にフォールバックしました（レスポンス: ${RESPONSE}）"
+                  AUTO_RETRY_LIMIT=0
+                  ;;
+              esac
+            fi
+          fi
+          case "$AUTO_RETRY_LIMIT" in ''|*[!0-9]*) AUTO_RETRY_LIMIT=0 ;; esac
+
+          if [ "$ERROR_TYPE" = "transient" ] && [ "$AUTO_RETRY_LIMIT" -lt "$TRANSIENT_FALLBACK_RETRY_LIMIT" ]; then
+            AUTO_RETRY_LIMIT="$TRANSIENT_FALLBACK_RETRY_LIMIT"
+          fi
+
+          NEXT_ATTEMPT=$((RETRY_ATTEMPT + 1))
+          if [ "$NEXT_ATTEMPT" -le "$AUTO_RETRY_LIMIT" ]; then
+            echo "自動リトライを試みます（${NEXT_ATTEMPT}/${AUTO_RETRY_LIMIT}回目）"
+            if GH_TOKEN="$WORKFLOW_PAT" gh workflow run claude-issue-dispatch.yml --repo "$REPO" --ref develop -f issue_number="$ISSUE_NUMBER" -f retry_attempt="$NEXT_ATTEMPT"; then
+              RETRY_BODY="🔁 実装ステップの完了を確認できなかったため、自動的に再実行します（${NEXT_ATTEMPT}/${AUTO_RETRY_LIMIT}回目）。既存のブランチ・コミットがあれば続きから再開します。"
+              RETRY_BODY="$RETRY_BODY"$'\n\n'"実行ログ: $RUN_URL"$'\n\n<!-- issue-deck-source:claude-issue-dispatch -->'$'\n\n<!-- issue-deck-agent:guide -->'
+              gh issue comment "$ISSUE_NUMBER" --body "$RETRY_BODY"
+              exit 0
+            fi
+            echo "自動リトライの起動（gh workflow run）に失敗しました。WORKFLOW_PATに必要な権限（Actions: write相当）が不足している可能性があります。従来どおりのフォールバック通知に切り替えます"
+          fi
+
+          echo "自動リトライを行わないため、フォールバックコメントを投稿します（エラー種別: $ERROR_TYPE）"
+          if [ "$ERROR_TYPE" = "transient" ]; then
+            FALLBACK_BODY="⚠️ 実装ステップが終了しましたが、コメント投稿・PR作成のいずれも確認できませんでした。Claude Code起動前後のGitHub API呼び出しが一時的に失敗した等、一過性の障害が発生したと考えられます。再実行すれば解消する可能性があります。実行ログをご確認ください: $RUN_URL"
+          else
+            FALLBACK_BODY="⚠️ 実装ステップが終了しましたが、コメント投稿・PR作成のいずれも確認できませんでした。調査や実装の途中で行き詰まった、またはエラーで終了した可能性があります。実行ログをご確認ください: $RUN_URL"
+          fi
+          if [ "$RETRY_ATTEMPT" -gt 0 ]; then
+            FALLBACK_BODY="$FALLBACK_BODY"$'\n\n'"自動リトライを${RETRY_ATTEMPT}回試みましたが解決しませんでした。"
+          fi
+          FALLBACK_BODY="$FALLBACK_BODY"$'\n\n<!-- issue-deck-source:claude-issue-dispatch -->'$'\n\n<!-- issue-deck-fallback-notice -->'
+          gh issue comment "$ISSUE_NUMBER" --body "$FALLBACK_BODY"
+          gh issue edit "$ISSUE_NUMBER" --add-label "00.check-user"
+
+  # triage/dispatchジョブが「対応開始をコメントで通知する」ステップに到達する前に落ちた場合、
+  # Issue側に痕跡が一切残らず、利用者からは処理が無反応のまま止まったようにしか見えない
+  # (issue-deck #650)。
+  #
+  # このジョブは`uses:`を一切使わず`run:`ステップのみで構成する。GitHub Actionsの障害は
+  # actionの解決処理(`Getting action download info`)そのもので発生することがあるため、
+  # actionを使わないジョブであれば同種の障害でも生き残って通知を残せる見込みが高い。
+  #
+  # 00.check-userは付与しない。このラベルは解除が「計画の承認」として解釈される経路があり、
+  # 計画コメントが投稿されないまま起動に失敗したケースで付与してしまうと、人間が解除した際に
+  # 計画フェーズを飛ばして実装が始まる恐れがあるため。
+  #
+  # 発火条件に`if: failure()`は使わない。dispatchジョブが`Set up job`で失敗したケース
+  # (まさに本ジョブが拾いたいインフラ起因の失敗)では`if: failure()`が真にならず本ジョブごと
+  # skipされるため、`always()`で必ず起動したうえでシェル側で通知要否を判定する。
+  notify-failure:
+    needs: [triage, dispatch]
+    if: always() && (needs.triage.result == 'failure' || needs.dispatch.result == 'failure')
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    steps:
+      - name: 起動失敗をIssueに通知する
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          ISSUE_NUMBER: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.issue_number || github.event.issue.number }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          TRIAGE_RESULT: ${{ needs.triage.result }}
+          DISPATCH_RESULT: ${{ needs.dispatch.result }}
+        run: |
+          set -e
+          echo "各ジョブの結果: triage=$TRIAGE_RESULT dispatch=$DISPATCH_RESULT"
+
+          # cancelled(人間による中断・concurrencyによる置き換え)は意図的な停止のため通知しない。
+          if [ "$TRIAGE_RESULT" != "failure" ] && [ "$DISPATCH_RESULT" != "failure" ]; then
+            echo "triage・dispatchのいずれも失敗していないため、通知しません"
+            exit 0
+          fi
+
+          if [ -z "$ISSUE_NUMBER" ]; then
+            echo "対象issue番号を特定できないため、通知をスキップします"
+            exit 0
+          fi
+
+          # dispatchジョブ側が既に何らかの通知を投稿できていた場合は二重に通知しない。
+          # dispatchが投稿するコメントには実行ログURLが含まれるため、同一runのURLを含む
+          # コメントの有無で判定する。判定自体に失敗した場合は投稿する側に倒す。
+          if gh issue view "$ISSUE_NUMBER" --json comments --jq '.comments[-20:][].body' 2>/dev/null | grep -qF "$RUN_URL"; then
+            echo "同一runの通知コメントを確認できたため、重複通知をスキップします"
+            exit 0
+          fi
+
+          BODY='⚠️ 自動対応の起動に失敗しました。計画・実装のいずれも行われていません。'
+          BODY="$BODY"$'\n\n'"実行ログ: $RUN_URL"
+          BODY="$BODY"$'\n\n''GitHub Actions側の障害が原因の場合があります。https://www.githubstatus.com で `Actions` の状態をご確認ください。'
+          BODY="$BODY"$'\n\n''復旧後、このIssueに改めて `@claude` とコメントすると再開します。'
+          BODY="$BODY"$'\n\n<!-- issue-deck-source:claude-issue-dispatch -->'$'\n\n<!-- issue-deck-fallback-notice -->'
+          gh issue comment "$ISSUE_NUMBER" --body "$BODY"
