@@ -1,7 +1,7 @@
 name: Claude Code Review (develop向けPR)
 
 # m-guchi/issue-deck の .github/workflows/claude-review-develop.yml を移植したもの。
-# 移植元コミット: baf7873f91321a1d981eae78fbb6dc697ffc2c6e
+# 移植元コミット: 29958837e7569c852740742dfd30daa2c03e89fc
 # 導入手順は issue-deck の docs/cross-repo-setup-guide.md を参照。
 # 以下のコメント中の #番号 は issue-deck 側のIssue番号を指す。
 #
