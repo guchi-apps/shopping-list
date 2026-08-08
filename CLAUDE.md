@@ -49,7 +49,9 @@ GitHub Actions上の無人実行では、その場で確認を取る相手がい
 
 - `main`は本番環境と一致するリリース用ブランチで、直接コミット・pushしない。`develop`が日常の開発ブランチで、本番へ反映する変更は`develop`→`main`のPull RequestをCI通過後にマージする。
 - Issue単位の作業ブランチは`develop`から作成し、ブランチ名は`issue-<Issue番号>`とする（例: `issue-123`）。この命名規則にワークフロー側のIssue番号特定処理が依存しているため、従わないブランチは全ワークフローの対象外になる。
-- worktreeは本体リポジトリの外（`~/apps/shopping-list-worktrees/<ブランチ名>/`）に作成する。
+- worktreeは本体リポジトリの外（`~/apps/shopping-list-worktrees/<ブランチ名>/`）に作成する。本体（`~/apps/shopping-list`）は常に`develop`の最新チェックアウトとして空けておく（レビュー・統合エージェント用）。
+- ローカルでIssueごとのセッションを起動する場合は`scripts/start-issue.sh <Issue番号>`を使う（worktree作成・`.env`の用意・ポート割り当て・LANアクセス設定・プロンプト生成までを行う）。レビュー・統合エージェントは`scripts/start-reviewer.sh`で起動する。
+- 開発サーバーのポートはIssueごとに`4000 + Issue番号`を割り当てる（例: issue-12 → 4012）。`scripts/start-issue.sh`がworktreeの`.env`へ自動設定するため、複数Issueのworktreeで同時に起動しても衝突しない。Googleログインが必須のため、そのポートの`/auth/callback`がSupabaseのRedirect URLsに登録されている必要がある。
 
 ### 実装エージェント（Issueごとに起動するセッション）の禁止事項
 

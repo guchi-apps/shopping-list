@@ -35,6 +35,30 @@ npm run dev
 
 `http://localhost:3101` で確認できます。
 
+`npm run dev` の実体は `scripts/dev.sh` で、次の処理を行います。
+
+- `.env` があれば `node --env-file=.env` で読み込む（無い場合は `op run` 等で既に環境変数が注入済みと見なして起動する）
+- ポートは「シェルの `PORT` > `.env` の `PORT` > 3101」の順で決まる（`PORT=4006 npm run dev` のように上書きできる）
+- 同一LAN上の別端末（スマホ等）から確認できるよう、Windows側のポートフォワーディングを `scripts/setup-lan-access.sh` で設定する（WSL環境のみ。Windowsの管理者権限が必要なためUACダイアログが表示される。失敗しても `localhost` での確認は続行できる）
+
+### Issueごとのマルチエージェント運用
+
+Issueごとに専用ブランチ・git worktree・Claude Codeセッションを分離して実装する運用を導入しています（[m-guchi/issue-deck](https://github.com/m-guchi/issue-deck) の仕組みを移植したもの。運用ルールは [CLAUDE.md](CLAUDE.md)、設計の詳細は issue-deck の `docs/multi-agent-workflow.md` を参照）。
+
+```bash
+# Issueごとにworktreeを作成し、実装エージェントのセッションを起動する
+scripts/start-issue.sh 12          # 単一Issue（このターミナルで起動）
+scripts/start-issue.sh 12 13 14    # 複数Issue（Windows Terminalの新規タブで並行起動）
+
+# develop向けの未処理PRを確認・マージするレビュー・統合エージェントを起動する
+scripts/start-reviewer.sh
+```
+
+- worktreeは本体リポジトリの外（`~/apps/shopping-list-worktrees/issue-<番号>/`）に作成されます。本体（`~/apps/shopping-list`）は常に `develop` の最新チェックアウトとして空けておく運用です
+- 開発サーバーのポートはIssueごとに `4000 + Issue番号` が自動で割り当てられ、worktreeの `.env` に書き込まれます（複数Issueを同時に起動しても衝突しません）
+- Googleログインが必須のため、割り当てられたポートの `/auth/callback` がSupabaseの Redirect URLs に登録されている必要があります
+- GitHub上では、Issueへ `@claude` とコメントすることで同等の実装フローを無人実行することもできます（`.github/workflows/claude-issue-dispatch.yml`）。ローカルのスクリプトは、対話しながら進めたい場合・実機で画面を確認したい場合に使います
+
 ### 構文チェック
 
 ```bash
