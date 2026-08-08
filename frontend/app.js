@@ -8,6 +8,7 @@ const state = {
   items: [],
   filter: 'all',
   sort: 'added',
+  showBought: false,
   loading: true,
   error: null,
   addDraft: { name: '', memo: '', category: '食品', priority: null },
@@ -240,7 +241,9 @@ function renderList() {
   const groups = state.filter === 'all' ? CATEGORIES : [state.filter];
 
   for (const category of groups) {
-    const items = sortItems(state.items.filter((it) => it.category === category));
+    const categoryItems = state.items.filter((it) => it.category === category);
+    const visibleItems = state.showBought ? categoryItems : categoryItems.filter((it) => !it.bought);
+    const items = sortItems(visibleItems);
     const section = document.createElement('div');
     section.className = 'section';
 
@@ -264,6 +267,18 @@ function renderList() {
     }
 
     el.list.appendChild(section);
+  }
+
+  if (state.items.some((it) => it.bought)) {
+    const toggle = document.createElement('button');
+    toggle.type = 'button';
+    toggle.className = 'show-bought-toggle';
+    toggle.textContent = state.showBought ? '購入したものを非表示にする' : '購入したものを表示する';
+    toggle.addEventListener('click', () => {
+      state.showBought = !state.showBought;
+      render();
+    });
+    el.list.appendChild(toggle);
   }
 }
 
