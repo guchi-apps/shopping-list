@@ -13,6 +13,7 @@ const rootDir = path.join(__dirname, '..');
 
 const pkgPath = path.join(rootDir, 'package.json');
 const changelogPath = path.join(rootDir, 'frontend', 'changelog.js');
+const swPath = path.join(rootDir, 'frontend', 'sw.js');
 
 const pkg = JSON.parse(readFileSync(pkgPath, 'utf8'));
 const version = pkg.version;
@@ -35,6 +36,13 @@ content = content.replace(/const APP_CHANGELOG = \[\n/, `const APP_CHANGELOG = [
 
 writeFileSync(changelogPath, content);
 
+// sw.js自体のバイト内容がリリースごとに変化しないと、ブラウザのService Worker更新検知が
+// 働かない（比較対象はimportScripts先ではなくsw.js自身のみのため）。SW_VERSIONもここで
+// 合わせて更新する。
+let swContent = readFileSync(swPath, 'utf8');
+swContent = swContent.replace(/const SW_VERSION = '[^']*';/, `const SW_VERSION = '${version}';`);
+writeFileSync(swPath, swContent);
+
 console.log(
-  `frontend/changelog.js を v${version} 用に更新しました。changes の内容を編集してからコミットしてください。`
+  `frontend/changelog.js と frontend/sw.js を v${version} 用に更新しました。changelog.js の changes の内容を編集してからコミットしてください。`
 );
