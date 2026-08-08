@@ -3,6 +3,9 @@
 const CATEGORIES = ['食品', '消耗品', '日用品', '趣味', 'その他'];
 const PRIORITIES = ['高', '中', '低'];
 const PRIORITY_CLASS = { 高: 'high', 中: 'mid', 低: 'low' };
+const PRIORITY_ORDER = { 高: 0, 中: 1, 低: 2 };
+const SORT_ORDER = ['added', 'name', 'priority'];
+const SORT_LABELS = { added: '追加順', name: '名前順', priority: '優先度順' };
 
 const state = {
   items: [],
@@ -193,6 +196,8 @@ function sortItems(items) {
   const arr = [...items];
   if (state.sort === 'name') {
     arr.sort((a, b) => a.name.localeCompare(b.name, 'ja'));
+  } else if (state.sort === 'priority') {
+    arr.sort((a, b) => (PRIORITY_ORDER[a.priority] ?? 3) - (PRIORITY_ORDER[b.priority] ?? 3));
   }
   arr.sort((a, b) => (a.bought === b.bought ? 0 : a.bought ? 1 : -1));
   return arr;
@@ -215,7 +220,7 @@ function renderFilterTabs() {
 }
 
 function renderSortToggle() {
-  el.sortToggle.textContent = `並び替え：${state.sort === 'added' ? '追加順' : '名前順'}`;
+  el.sortToggle.textContent = `並び替え：${SORT_LABELS[state.sort]}`;
 }
 
 // ---- rendering: list ----
@@ -505,7 +510,8 @@ function bindEvents() {
   });
 
   el.sortToggle.addEventListener('click', () => {
-    state.sort = state.sort === 'added' ? 'name' : 'added';
+    const idx = SORT_ORDER.indexOf(state.sort);
+    state.sort = SORT_ORDER[(idx + 1) % SORT_ORDER.length];
     render();
   });
 
