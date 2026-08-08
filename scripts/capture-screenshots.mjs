@@ -54,6 +54,8 @@ async function captureViewport(browser, viewport, outputPaths) {
   await page.click('#editClose');
   await page.waitForSelector('#editOverlay[hidden]');
 
+  await page.click('#profileButton');
+  await page.waitForSelector('#profileMenu:not([hidden])');
   await page.click('#versionBadge');
   await page.waitForSelector('#changelogOverlay:not([hidden])');
   await shoot('changelog');

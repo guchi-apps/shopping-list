@@ -20,6 +20,10 @@ const el = {
   loginButton: document.getElementById('loginButton'),
   loginError: document.getElementById('loginError'),
   appRoot: document.getElementById('appRoot'),
+  profileWrap: document.getElementById('profileWrap'),
+  profileButton: document.getElementById('profileButton'),
+  profileMenu: document.getElementById('profileMenu'),
+  profileEmail: document.getElementById('profileEmail'),
   logoutButton: document.getElementById('logoutButton'),
   filterTabs: document.getElementById('filterTabs'),
   sortToggle: document.getElementById('sortToggle'),
@@ -90,15 +94,31 @@ const deleteItemApi = (id) => apiRequest(`api/items/${id}`, { method: 'DELETE' }
 // エラー内容（403の理由など）が即座に空で上書きされてしまう。
 function showLogin() {
   el.appRoot.hidden = true;
-  el.logoutButton.hidden = true;
+  el.profileWrap.hidden = true;
+  closeProfileMenu();
   el.loginScreen.hidden = false;
 }
 
-function showApp() {
+function showApp(session) {
   el.loginScreen.hidden = true;
   el.loginError.hidden = true;
   el.appRoot.hidden = false;
-  el.logoutButton.hidden = false;
+  el.profileWrap.hidden = false;
+  el.profileEmail.textContent = session?.user?.email || '';
+}
+
+// ---- profile menu ----
+function openProfileMenu() {
+  el.profileMenu.hidden = false;
+  el.profileButton.setAttribute('aria-expanded', 'true');
+}
+function closeProfileMenu() {
+  el.profileMenu.hidden = true;
+  el.profileButton.setAttribute('aria-expanded', 'false');
+}
+function toggleProfileMenu() {
+  if (el.profileMenu.hidden) openProfileMenu();
+  else closeProfileMenu();
 }
 
 function setLoginError(message) {
@@ -413,7 +433,16 @@ function bindEvents() {
     }
   });
 
+  el.profileButton.addEventListener('click', (e) => {
+    e.stopPropagation();
+    toggleProfileMenu();
+  });
+  document.addEventListener('click', (e) => {
+    if (!el.profileMenu.hidden && !el.profileWrap.contains(e.target)) closeProfileMenu();
+  });
+
   el.logoutButton.addEventListener('click', () => {
+    closeProfileMenu();
     ShoppingListAuth.signOut();
   });
 
@@ -436,7 +465,10 @@ function bindEvents() {
   el.editName.addEventListener('input', () => { state.editDraft.name = el.editName.value; });
   el.editMemo.addEventListener('input', () => { state.editDraft.memo = el.editMemo.value; });
 
-  el.versionBadge.addEventListener('click', openChangelog);
+  el.versionBadge.addEventListener('click', () => {
+    closeProfileMenu();
+    openChangelog();
+  });
   el.changelogClose.addEventListener('click', closeChangelog);
   el.changelogOverlay.addEventListener('click', (e) => { if (e.target === el.changelogOverlay) closeChangelog(); });
 
@@ -445,6 +477,7 @@ function bindEvents() {
     if (!el.editOverlay.hidden) closeEdit();
     else if (!el.addOverlay.hidden) closeAdd();
     else if (!el.changelogOverlay.hidden) closeChangelog();
+    else if (!el.profileMenu.hidden) closeProfileMenu();
   });
 }
 
@@ -485,7 +518,7 @@ async function init() {
 
   const session = await ShoppingListAuth.getSession();
   if (session) {
-    showApp();
+    showApp(session);
     await loadItems();
   } else {
     showLogin();
@@ -496,7 +529,7 @@ async function init() {
     // INITIAL_SESSION はsubscribe直後に必ず1回発火し、上のgetSession()分岐と重複するため無視する
     if (event === 'INITIAL_SESSION') return;
     if (nextSession) {
-      showApp();
+      showApp(nextSession);
       loadItems();
     } else {
       showLogin();

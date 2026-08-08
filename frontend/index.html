@@ -31,8 +31,19 @@
         <h1>買い物リスト</h1>
         <p class="subtitle">Notionの買い物リストと同期</p>
       </div>
-      <button type="button" class="logout-button" id="logoutButton" hidden>ログアウト</button>
-      <button type="button" class="version-badge" id="versionBadge"></button>
+      <div class="profile-wrap" id="profileWrap" hidden>
+        <button type="button" class="profile-button" id="profileButton" aria-haspopup="true" aria-expanded="false" aria-label="アカウントメニュー">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="8" r="4"></circle>
+            <path d="M4 20c0-4 3.5-7 8-7s8 3 8 7"></path>
+          </svg>
+        </button>
+        <div class="profile-menu" id="profileMenu" hidden>
+          <p class="profile-email" id="profileEmail"></p>
+          <button type="button" class="version-badge" id="versionBadge"></button>
+          <button type="button" class="logout-button" id="logoutButton">ログアウト</button>
+        </div>
+      </div>
     </div>
   </header>
 
