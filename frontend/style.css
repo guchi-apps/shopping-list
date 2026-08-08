@@ -30,7 +30,7 @@ body {
   color: var(--ink);
 }
 
-input::placeholder { color: rgba(43, 35, 32, 0.35); }
+input::placeholder, textarea::placeholder { color: rgba(43, 35, 32, 0.35); }
 
 .app {
   min-height: 100dvh;
@@ -261,11 +261,14 @@ input::placeholder { color: rgba(43, 35, 32, 0.35); }
 .priority-dot.mid { background: var(--priority-mid); }
 .priority-dot.low { background: var(--priority-low); }
 
-.item-name {
+.item-main {
   flex: 1;
+  min-width: 0;
+}
+
+.item-name {
   font-size: 15.5px;
   color: var(--ink);
-  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -273,11 +276,12 @@ input::placeholder { color: rgba(43, 35, 32, 0.35); }
 .item-name.bought { color: var(--ink-35); text-decoration: line-through; }
 
 .item-memo {
-  font-size: 12.5px;
+  font-size: 12px;
   font-weight: 600;
   color: var(--ink-45);
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
-  flex-shrink: 0;
 }
 
 .fab {
@@ -355,6 +359,12 @@ input::placeholder { color: rgba(43, 35, 32, 0.35); }
   font-family: inherit;
 }
 
+.textarea-memo {
+  resize: vertical;
+  min-height: 72px;
+  line-height: 1.5;
+}
+
 .field-label {
   font-size: 12.5px;
   font-weight: 700;
@@ -411,6 +421,21 @@ input::placeholder { color: rgba(43, 35, 32, 0.35); }
   border: 1px solid oklch(80% 0.1 25);
   cursor: pointer;
 }
+
+.btn-secondary {
+  flex: 1;
+  text-align: center;
+  padding: 14px 0;
+  border-radius: 14px;
+  font-size: 15.5px;
+  font-weight: 700;
+  color: var(--ink-55);
+  background: #fff;
+  border: 1px solid var(--ink-12);
+  cursor: pointer;
+}
+
+.confirm-message { font-size: 14.5px; color: var(--ink); margin: 0 0 20px; }
 
 .changelog-list { display: flex; flex-direction: column; gap: 16px; }
 .changelog-entry .changelog-version { font-size: 15px; font-weight: 800; color: var(--ink); }
@@ -479,6 +504,7 @@ input::placeholder { color: rgba(43, 35, 32, 0.35); }
   .item-check,
   .btn-primary,
   .btn-danger,
+  .btn-secondary,
   .fab,
   .sheet-close,
   .sort-toggle,
@@ -495,6 +521,7 @@ input::placeholder { color: rgba(43, 35, 32, 0.35); }
   .item-check:hover { border-color: var(--ink-35); }
   .btn-primary:hover { background: var(--accent); }
   .btn-danger:hover { background: oklch(96% 0.03 25); }
+  .btn-secondary:hover { border-color: var(--ink-18); }
   .fab:hover { transform: scale(1.05); box-shadow: 0 10px 24px rgba(0, 0, 0, 0.22); }
   .sheet-close:hover,
   .sort-toggle:hover,
