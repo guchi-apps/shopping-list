@@ -205,8 +205,9 @@ function sortItems(items) {
 
 // ---- rendering: header controls ----
 function renderFilterTabs() {
-  const counts = { all: state.items.length };
-  for (const c of CATEGORIES) counts[c] = state.items.filter((it) => it.category === c).length;
+  const unboughtItems = state.items.filter((it) => !it.bought);
+  const counts = { all: unboughtItems.length };
+  for (const c of CATEGORIES) counts[c] = unboughtItems.filter((it) => it.category === c).length;
   const tabs = [['all', 'すべて'], ...CATEGORIES.map((c) => [c, c])];
   el.filterTabs.innerHTML = '';
   for (const [key, label] of tabs) {
