@@ -1,8 +1,15 @@
 'use strict';
 
-const APP_VERSION = '0.4.1';
+const APP_VERSION = '0.4.2';
 
 const APP_CHANGELOG = [
+  {
+    version: '0.4.2',
+    date: '2026-08-08',
+    changes: [
+      '購入したものを一覧から非表示にし、画面下部のボタンから表示・非表示を切り替えられるようにしました',
+    ],
+  },
   {
     version: '0.4.1',
     date: '2026-08-08',

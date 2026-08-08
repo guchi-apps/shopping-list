@@ -1,8 +1,12 @@
 'use strict';
 
-importScripts('./changelog.js');
+// SWの更新検知はブラウザがこのファイル自体のバイト内容を比較して行われ、
+// importScripts先（changelog.js）の変更だけでは新しいService Workerとして
+// 認識されない。そのためリリースごとにこの値がバイト単位で変化するよう、
+// scripts/version-changelog.mjs がバージョンアップ時に自動で書き換える。
+const SW_VERSION = '0.4.2';
 
-const CACHE_NAME = `shopping-list-${APP_VERSION}`;
+const CACHE_NAME = `shopping-list-${SW_VERSION}`;
 const APP_SHELL = [
   './',
   './index.html',
