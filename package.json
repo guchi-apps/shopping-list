@@ -6,8 +6,8 @@
   "scripts": {
     "start": "node backend/index.js",
     "dev": "bash scripts/dev.sh",
-    "check": "node --check backend/index.js && node --check backend/notion.js && node --check backend/notion-stub.js && node --check backend/auth.js && node --check frontend/app.js && node --check frontend/auth.js && node --check frontend/changelog.js && node --check scripts/capture-screenshots.mjs",
-    "version": "node scripts/version-changelog.mjs && git add frontend/changelog.js",
+    "check": "node --check backend/index.js && node --check backend/notion.js && node --check backend/notion-stub.js && node --check backend/auth.js && node --check frontend/app.js && node --check frontend/auth.js && node --check frontend/changelog.js && node --check frontend/sw.js && node --check scripts/capture-screenshots.mjs && node --check scripts/version-changelog.mjs",
+    "version": "node scripts/version-changelog.mjs && git add frontend/changelog.js frontend/sw.js",
     "version:patch": "npm version patch",
     "version:minor": "npm version minor",
     "version:major": "npm version major"

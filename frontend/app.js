@@ -509,9 +509,23 @@ function bindEvents() {
 }
 
 function registerServiceWorker() {
-  if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('sw.js').catch(() => {});
-  }
+  if (!('serviceWorker' in navigator)) return;
+
+  navigator.serviceWorker.register('sw.js').then((registration) => {
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') registration.update();
+    });
+  }).catch(() => {});
+
+  // 新しいService Workerが有効化されたら、再インストールなしで最新版を使えるように
+  // ページを自動リロードする（初回のcontrollerchangeでも発火するが、その場合は
+  // 読み込み直後の再読み込みになるだけで実害はない）。
+  let reloadingForUpdate = false;
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (reloadingForUpdate) return;
+    reloadingForUpdate = true;
+    window.location.reload();
+  });
 }
 
 async function loadItems() {
