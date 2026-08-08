@@ -16,6 +16,13 @@ name: Release develop to main
 #   構造化出力に`changelog`（ユーザーが画面で体感できる変更の一覧）を追加した。
 # - バンプPRの自動マージ（`gh pr merge --auto`）は行わない。自動生成した更新履歴の文面は
 #   ユーザー向けに公開されるため、人間のレビューを必ず挟む。
+# - #55での見直し: develop→mainのPR作成をworkflow_dispatch限定に変更する対応を一度入れたが、
+#   本当に自動連鎖を止めたかったのは「バージョンが人間の関与なく上がること」（Issueごとの
+#   実装コミットが`npm run version:patch`でバージョンを上げていた経路。CLAUDE.mdの
+#   「バージョンとリリース履歴（changelog）」を参照。この経路は#55で廃止済み）であり、
+#   develop→mainのPR作成そのものは自動でよいという結論になったため、push起点の自動作成
+#   （移植元issue-deckの元の挙動）に戻した。バンプPR自体の作成（バージョンを実際に上げる
+#   操作）はworkflow_dispatch限定のまま変更していない。
 #
 # release-to-mainスキルが定める手順のうち、「1. バージョンを上げる」
 # 「2. developへの反映（フィーチャーブランチ+PR）」「3. develop→mainのPRを作成する」までを

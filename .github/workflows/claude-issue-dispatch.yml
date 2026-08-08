@@ -1171,8 +1171,10 @@ jobs:
             ## 責務
             - Issueの要件を実装する
             - `npm run check`を実行し、構文エラーが無いことを確認する
-            - 画面で体感できる変更を行った場合は、`frontend/changelog.js`への追記の必要性を検討する
-              （`CLAUDE.md`の「更新履歴（changelog）」参照。内部実装のみの変更では追記しない）
+            - `package.json`のversionフィールドと`frontend/changelog.js`は変更しない（`npm run version:patch`
+              等の`npm version`系コマンドも実行しない）。バージョンとリリース履歴の更新は
+              `release-develop-to-main.yml`ワークフローがリリース単位でまとめて行う唯一の経路であり、
+              個々の実装コミットでは扱わない（`CLAUDE.md`の「バージョンとリリース履歴（changelog）」参照）
             - 変更をコミットする（コミットメッセージは日本語、1〜2文で変更の目的を書き、末尾に
               `#${{ steps.state.outputs.issue_number }}` を付ける。Authorは
               `Claude Code <claude-code@example.com>` にする）

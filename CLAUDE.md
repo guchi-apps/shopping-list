@@ -39,9 +39,11 @@ GitHub Actions上の無人実行では、その場で確認を取る相手がい
 - 実シークレットの値を、コミットメッセージ・PR本文・Issueコメント・ワークフローのログなど、リポジトリやGitHub上に残る場所へ出力しない。
 - 既存のシークレット・環境変数の設定変更が必要になった場合は、自動で進めず`00.check-user`を付与してユーザーの確認を待つ（後述の「自動マージ不可カテゴリ」にも該当する）。
 
-### 更新履歴（changelog）
+### バージョンとリリース履歴（changelog）
 
-`frontend/changelog.js`に記載するのはユーザーが画面で体感できる変更のみとする。内部実装・リファクタリング・インフラ更新は記載しない。バージョンを上げる際は`npm run version:patch`等を使う（npmのlifecycleフックが`frontend/changelog.js`にスタブを自動挿入する）。`npm pkg set version`はこのフックが走らないため使わない。
+`package.json`のversion更新と`frontend/changelog.js`への追記は、`.github/workflows/release-develop-to-main.yml`（workflow_dispatchによる手動起動）だけが行う。このワークフローがdevelop/main間の差分全体からセマンティックバージョニングに基づく上げ幅と、ユーザーが画面で体感できる変更のみの更新履歴をまとめて生成する（内部実装・リファクタリング・インフラ更新は記載しない）。
+
+Issueごとの実装エージェントは、`npm version`系コマンド（`npm run version:patch`等）を実行せず、`package.json`のversionフィールドと`frontend/changelog.js`を変更しない。かつては個々の実装コミットでもこれらを更新していたが、上記ワークフローがリリース単位でまとめて生成する方式に一本化したため廃止した（#55）。
 
 ## Issueごとの複数Claude Codeエージェント運用
 
