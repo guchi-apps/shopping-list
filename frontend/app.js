@@ -210,8 +210,10 @@ function renderItemRow(item) {
   row.innerHTML = `
     <div class="item-check ${item.bought ? 'checked' : ''}">${item.bought ? '✓' : ''}</div>
     ${priorityDotHtml(item.priority)}
-    <div class="item-name ${item.bought ? 'bought' : ''}"></div>
-    ${item.memo ? '<div class="item-memo"></div>' : ''}
+    <div class="item-main">
+      <div class="item-name ${item.bought ? 'bought' : ''}"></div>
+      ${item.memo ? '<div class="item-memo"></div>' : ''}
+    </div>
   `;
   row.querySelector('.item-name').textContent = item.name;
   if (item.memo) row.querySelector('.item-memo').textContent = item.memo;
