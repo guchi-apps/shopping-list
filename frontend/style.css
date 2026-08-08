@@ -281,8 +281,8 @@ input::placeholder { color: rgba(43, 35, 32, 0.35); }
 }
 
 .fab {
-  position: fixed;
-  right: max(20px, calc((100vw - 560px) / 2 + 20px));
+  position: absolute;
+  right: 20px;
   bottom: calc(26px + env(safe-area-inset-bottom));
   width: 56px;
   height: 56px;
@@ -437,4 +437,67 @@ input::placeholder { color: rgba(43, 35, 32, 0.35); }
   text-align: center;
   color: var(--ink-45);
   font-size: 14px;
+}
+
+@media (min-width: 720px) {
+  body {
+    min-height: 100dvh;
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    padding: 48px 24px;
+  }
+
+  .app {
+    width: 100%;
+    max-width: 640px;
+    min-height: 0;
+    height: calc(100dvh - 96px);
+    max-height: 860px;
+    border-radius: 28px;
+    overflow: hidden;
+    box-shadow: 0 24px 60px rgba(43, 35, 32, 0.18), 0 2px 8px rgba(43, 35, 32, 0.08);
+    padding-top: 24px;
+  }
+
+  .login-screen { width: 100%; padding: 48px 24px; }
+
+  .sheet-overlay { align-items: center; }
+
+  .sheet {
+    max-width: 440px;
+    border-radius: 24px;
+    padding: 24px 24px calc(24px + env(safe-area-inset-bottom));
+    max-height: 80dvh;
+  }
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .tab-pill,
+  .chip,
+  .item-row,
+  .item-check,
+  .btn-primary,
+  .btn-danger,
+  .fab,
+  .sheet-close,
+  .sort-toggle,
+  .version-badge,
+  .logout-button {
+    transition: background-color 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
+  }
+
+  .tab-pill:hover { border-color: var(--ink-18); }
+  .tab-pill.active:hover { background: var(--accent-strong); }
+  .chip:hover { border-color: var(--ink-18); }
+  .chip.active:hover { background: var(--accent-strong); }
+  .item-row:hover { box-shadow: 0 4px 12px var(--ink-10); }
+  .item-check:hover { border-color: var(--ink-35); }
+  .btn-primary:hover { background: var(--accent); }
+  .btn-danger:hover { background: oklch(96% 0.03 25); }
+  .fab:hover { transform: scale(1.05); box-shadow: 0 10px 24px rgba(0, 0, 0, 0.22); }
+  .sheet-close:hover,
+  .sort-toggle:hover,
+  .version-badge:hover,
+  .logout-button:hover { color: var(--ink); }
 }
