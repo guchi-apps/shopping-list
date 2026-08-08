@@ -54,7 +54,7 @@ Issueごとの実装エージェントは、`npm version`系コマンド（`npm 
 - **GitHub Actions実行**: 各ワークフローが実行前に`.shared-context/`へcheckoutする。存在しない場合（checkout失敗時など）は共有知識なしでそのまま作業を進めてよい。
 - **ローカル実行**: `~/apps/_docs`（`scripts/start-issue.sh`・`scripts/start-reviewer.sh`が`--add-dir`で参照可能にする）。
 
-読む順序は、自分の役割の`agent-rules/`（実装エージェントなら`agent-rules/implementation.md`、レビュー・統合エージェントなら`agent-rules/review.md`）→ 必要に応じて`knowledge/`の該当ファイル → 設計判断が要るときだけ`README.md`（アプリ設計ガイド）・`guides/`。最初から全部を読む必要はない。
+読む順序は、`CLAUDE.md`（索引）→ 自分の役割の`agent-rules/`（実装エージェントなら`agent-rules/implementation.md`、レビュー・統合エージェントなら`agent-rules/review.md`）→ 必要に応じて`knowledge/`の該当ファイル → 設計判断が要るときだけ`standards/`の該当ファイル → 手作業の設定手順が要るときだけ`guides/`。最初から全部を読む必要はない。各ファイルの冒頭に「いつ読むか」の1行があるので、それで読むかどうかを判断する。
 
 ### 参照の優先順位
 
@@ -63,7 +63,7 @@ Issueごとの実装エージェントは、`npm version`系コマンド（`npm 
 1. Issue本文・コメントでの明示的な指示
 2. このファイル（`CLAUDE.md`）
 3. `.shared-context/CLAUDE.md`・`.shared-context/agent-rules/`
-4. `.shared-context/knowledge/`・`.shared-context/README.md`・`.shared-context/guides/`
+4. `.shared-context/knowledge/`・`.shared-context/standards/`・`.shared-context/guides/`
 
 共有知識は「他のアプリではこうしている」という既定値であり、shopping-list固有のルールを上書きしない。
 
