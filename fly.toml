@@ -1,0 +1,31 @@
+# 23.preview-requiredラベル用のプレビュー環境の雛形（#54）。issue-deckと同様、PRごとの
+# 個別アプリではなく単一の共有アプリの中身をデプロイのたびに上書きする方式（.github/workflows/
+# deploy-preview.yml参照）。
+# app名はissue-deckリポジトリのプレビュー用Fly.ioアプリ（issue-deck-preview）をそのまま
+# 共通利用する（m-guchiの指示、#54）。shopping-list専用のFly.ioアプリは新規作成しない。
+app = "issue-deck-preview"
+primary_region = "nrt"
+
+[build]
+
+[env]
+  PORT = "3101"
+
+[http_service]
+  internal_port = 3101
+  force_https = true
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 0
+  processes = ["app"]
+
+  [[http_service.checks]]
+    grace_period = "5s"
+    interval = "30s"
+    method = "GET"
+    timeout = "3s"
+    path = "/healthz"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "256mb"

@@ -39,9 +39,11 @@ GitHub Actions上の無人実行では、その場で確認を取る相手がい
 - 実シークレットの値を、コミットメッセージ・PR本文・Issueコメント・ワークフローのログなど、リポジトリやGitHub上に残る場所へ出力しない。
 - 既存のシークレット・環境変数の設定変更が必要になった場合は、自動で進めず`00.check-user`を付与してユーザーの確認を待つ（後述の「自動マージ不可カテゴリ」にも該当する）。
 
-### 更新履歴（changelog）
+### バージョンとリリース履歴（changelog）
 
-`frontend/changelog.js`に記載するのはユーザーが画面で体感できる変更のみとする。内部実装・リファクタリング・インフラ更新は記載しない。バージョンを上げる際は`npm run version:patch`等を使う（npmのlifecycleフックが`frontend/changelog.js`にスタブを自動挿入する）。`npm pkg set version`はこのフックが走らないため使わない。
+`package.json`のversion更新と`frontend/changelog.js`への追記は、`.github/workflows/release-develop-to-main.yml`（workflow_dispatchによる手動起動）だけが行う。このワークフローがdevelop/main間の差分全体からセマンティックバージョニングに基づく上げ幅と、ユーザーが画面で体感できる変更のみの更新履歴をまとめて生成する（内部実装・リファクタリング・インフラ更新は記載しない）。
+
+Issueごとの実装エージェントは、`npm version`系コマンド（`npm run version:patch`等）を実行せず、`package.json`のversionフィールドと`frontend/changelog.js`を変更しない。かつては個々の実装コミットでもこれらを更新していたが、上記ワークフローがリリース単位でまとめて生成する方式に一本化したため廃止した（#55）。
 
 ## Issueごとの複数Claude Codeエージェント運用
 
@@ -92,10 +94,10 @@ GitHub Actions上の無人実行では、その場で確認を取る相手がい
 |---|---|
 | `21.plan-required` | 実装前にPlan modeでの計画提示・承認を必須にする |
 | `22.merge-confirm-required` | 内容によらず常に`00.check-user`を付与し、自動マージをスキップする |
-| `23.preview-required` | PR作成前に開発サーバーURLでの画面確認・承認を必須にする |
+| `23.preview-required` | PR作成に連動してFly.ioへ自動デプロイし、そのプレビューURLでの画面確認が完了するまでdevelopへの自動マージを保留する |
 | `24.screenshot-required` | 実装完了後にPlaywrightで画面を自動撮影し、Issueコメントに埋め込んだうえで`00.check-user`を付与する |
 
-`24.screenshot-required`の無人撮影（#9で追加）は、CI専用ログインバイパス（`backend/auth.js`の`CI_AUTH_BYPASS_TOKEN`、#8）とNotion APIスタブ（`backend/notion-stub.js`、`NOTION_STUB=1`、#8）で開発サーバーを起動し、`scripts/capture-screenshots.mjs`（Playwright）で本体画面・追加/編集/更新履歴の3モーダルをデスクトップ／モバイルの2ビューポートで撮影、`scripts/capture-issue-screenshots.sh`が`scripts/post-issue-screenshot.sh`（#7）経由でscreenshotsブランチへ配置してIssueコメントに埋め込む。撮影は自動化されているが、developへのマージ前には必ず人間が結果を確認する設計のため、撮影後も`00.check-user`は付与される。`23.preview-required`は撮影の仕組みが無いIssue向けのラベルで、引き続き人間が開発サーバーを手元で起動して確認する運用のままとなる。
+`24.screenshot-required`の無人撮影（#9で追加）は、CI専用ログインバイパス（`backend/auth.js`の`CI_AUTH_BYPASS_TOKEN`、#8）とNotion APIスタブ（`backend/notion-stub.js`、`NOTION_STUB=1`、#8）で開発サーバーを起動し、`scripts/capture-screenshots.mjs`（Playwright）で本体画面・追加/編集/更新履歴の3モーダルをデスクトップ／モバイルの2ビューポートで撮影、`scripts/capture-issue-screenshots.sh`が`scripts/post-issue-screenshot.sh`（#7）経由でscreenshotsブランチへ配置してIssueコメントに埋め込む。撮影は自動化されているが、developへのマージ前には必ず人間が結果を確認する設計のため、撮影後も`00.check-user`は付与される。`23.preview-required`は実装ブランチ（`issue-<番号>`）をFly.io Machines上へ自動デプロイし、ブラウザだけで動作確認できる専用URLを用意するラベルである（#54）。`CI_AUTH_BYPASS_TOKEN`（`backend/auth.js`）と`NOTION_STUB`（`backend/notion-stub.js`）を流用し、本番のSupabase認証・Notionデータには一切接続しない。デプロイは`.github/workflows/deploy-preview.yml`（`workflow_call`）が担い、`claude-issue-dispatch.yml`の`deploy-preview`・`notify-preview-url`ジョブが実装完了後に呼び出してプレビューURLをIssueへ別コメントで通知する。PRごとの個別環境ではなく、issue-deckと同様にリポジトリ全体で単一の共有Fly.ioアプリの中身を都度上書きする方式のため、同時に複数Issueのプレビューを別URLで確認することはできない（`concurrency`で直列化・後勝ち）。デプロイ先のFly.ioアプリ（`fly.toml`の`app`名）はshopping-list専用に新規作成せず、issue-deckリポジトリのプレビュー用アプリ（`issue-deck-preview`）をそのまま共通利用する（m-guchiの指示、#54）。そのため共有範囲は本リポジトリ内だけでなくissue-deckとの間にも及び、両リポジトリのいずれかが直近にデプロイした内容で上書きされる。developへのマージ前確認は`claude-review-develop.yml`の`risk-check`ジョブが`23.preview-required`を検知して`00.check-user`を付与する形でゲートする。
 
 ### 自動マージ不可カテゴリ（`00.check-user`付与対象）
 

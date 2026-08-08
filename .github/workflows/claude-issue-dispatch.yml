@@ -12,8 +12,9 @@ name: Claude Issue Dispatch
 #   Playwrightによる無人スクリーンショット撮影を追加済み。それ以外のnpm依存パッケージは
 #   引き続き持たない方針）
 # - `24.screenshot-required`が付いたIssueは、実装完了後にPlaywrightで自動撮影して
-#   Issueに投稿したうえで`00.check-user`を付与する（`23.preview-required`は自動撮影の
-#   仕組みが無いため、従来どおり人間の画面確認を待って停止する）
+#   Issueに投稿したうえで`00.check-user`を付与する。`23.preview-required`が付いたIssueは、
+#   実装ブランチをFly.io Machines上のプレビュー環境へ自動デプロイし、プレビューURLを
+#   Issueに通知する（`deploy-preview.yml`、#54）
 # - 検証コマンドを`npm run check`に、allowedToolsを`Bash(npm:*)`/`Bash(node:*)`に置換
 #
 # Issueへの@claudeコメントを起点に、issue-<番号>ブランチ作成・実装・develop向けPR作成を
@@ -93,6 +94,13 @@ name: Claude Issue Dispatch
 #                   コメント返信が必要なケースもここで処理する。
 #   dispatch      : mode!=skipのときだけ動く重い本体。issueごとのconcurrencyはこのジョブだけが持つ。
 #   notify-failure: triage/dispatchのいずれかが失敗した場合にIssueへ通知する。
+#
+# 上記3段に加え、23.preview-requiredが付いたissueをimplement/additionalモードで処理した場合に限り、
+# dispatch完了後に deploy-preview → notify-preview-url の2ジョブが動く(#54)。deploy-previewは
+# deploy-preview.ymlをworkflow_callで呼び出し実装ブランチをFly.io Machines上へデプロイし、
+# notify-preview-urlがその結果(実URLまたは失敗)をIssueへ別コメントとして通知する。fly deployを
+# 含み数分かかるため、dispatchジョブ内のClaude Codeステップの完了報告とは非同期に(完了後の
+# 別コメントとして)通知する構成にしている(issue-deckの同名ジョブと同じ設計)。
 
 on:
   issues:
@@ -380,6 +388,12 @@ jobs:
     concurrency:
       group: issue-dispatch-${{ github.event_name == 'workflow_dispatch' && github.event.inputs.issue_number || github.event.issue.number }}-${{ needs.triage.outputs.lane }}
       cancel-in-progress: false
+    # deploy-previewジョブ(#54)が、順番待ちの間にIssueの状態が変わってmode=skipへ倒された
+    # ケース(下記「triageの判定結果を引き継ぐ」ステップの陳腐化チェック参照)を判別するための
+    # 出力。triageジョブのoutputs.modeは待機前の判定のままのため、これを見ずに待機後の値を
+    # 使う必要がある。
+    outputs:
+      final_mode: ${{ steps.state.outputs.mode }}
     permissions:
       contents: write
       pull-requests: write
@@ -1171,8 +1185,10 @@ jobs:
             ## 責務
             - Issueの要件を実装する
             - `npm run check`を実行し、構文エラーが無いことを確認する
-            - 画面で体感できる変更を行った場合は、`frontend/changelog.js`への追記の必要性を検討する
-              （`CLAUDE.md`の「更新履歴（changelog）」参照。内部実装のみの変更では追記しない）
+            - `package.json`のversionフィールドと`frontend/changelog.js`は変更しない（`npm run version:patch`
+              等の`npm version`系コマンドも実行しない）。バージョンとリリース履歴の更新は
+              `release-develop-to-main.yml`ワークフローがリリース単位でまとめて行う唯一の経路であり、
+              個々の実装コミットでは扱わない（`CLAUDE.md`の「バージョンとリリース履歴（changelog）」参照）
             - 変更をコミットする（コミットメッセージは日本語、1〜2文で変更の目的を書き、末尾に
               `#${{ steps.state.outputs.issue_number }}` を付ける。Authorは
               `Claude Code <claude-code@example.com>` にする）
@@ -1213,39 +1229,23 @@ jobs:
             撮影はこのステップでpushしたブランチの内容をそのまま使うため、実装エージェント自身が
             撮影のために何かする必要はない）。撮影は自動化されていますが、developへのマージ前には
             必ず人間が結果を確認する設計のため、`24.screenshot-required`が付いている場合も
-            （下記`23.preview-required`が同時に付いていない限り）特別扱いせず通常どおり完了処理
-            まで進めてください。
+            特別扱いせず通常どおり完了処理まで進めてください。
 
-            `23.preview-required`は自動撮影の仕組みが無いIssue向けのラベルで、引き続き人間による
-            手動確認が必要です。
+            `23.preview-required`が付いている場合も同様です。実装・構文チェックまで終えた時点で
+            上記「責務」に記載の完了処理（新規PR作成またはPRコメント投稿・`03.d:marge`への付け替え）
+            まで通常どおり進めてください。それを理由にPR作成自体をブロックする必要はありません。
+            実際に開けるプレビューURLの発行（Fly.io Machines上へのデプロイ、`.github/workflows/
+            deploy-preview.yml`）は、このステップとは別のジョブ（`deploy-preview`・
+            `notify-preview-url`）がこのステップの完了後に自動的に行い、デプロイ完了後にプレビューURL
+            を別コメントとしてIssueへ追加で投稿します（fly deployを含み数分かかるため、この
+            ステップの中で同期的に待つことはできません）。そのためこのステップ自身がプレビューURLを
+            取得・推測して埋め込む必要はなく、最後の完了報告コメントには「プレビュー環境の準備が
+            完了次第、別コメントでURLをお知らせします」といった趣旨の一文を添えるだけで十分です。
+            developへのマージ前確認は`claude-review-develop.yml`の`risk-check`ジョブが
+            `23.preview-required`を検知して常に`00.check-user`を付与する形でゲートするため、この
+            ステップでブロックする必要はありません。
 
-            - Issueに`23.preview-required`が付いている場合:
-              実装・構文チェックまで終えた時点で上記の完了処理（新規PR作成またはPRコメント投稿）を行わず、
-              ブランチのpushまでは行ったうえで、代わりに
-              `gh issue edit ${{ steps.state.outputs.issue_number }} --add-label "00.check-user"`を実行し
-              （`02.wip`はそのままにし`03.d:marge`への付け替えは行わない）、実装内容の要約と「画面確認が
-              必要なためユーザーの確認を待っています」旨を`gh issue comment`で投稿して停止してください。
-              このコメントに、人間が手元でブランチをcheckoutして開発サーバーを起動する手順もあわせて
-              記載してください。無人実行では実際にdevサーバーを起動できないため、以下の案内を含めます。
-              ・起動コマンド: `PORT=<ポート> op run --env-file=.env.tpl -- npm run dev`
-              　（`<ポート>`はポート割り当て規約 `4000 + Issue番号` に従い
-              　${{ steps.state.outputs.issue_number }} 番のIssueでは下記URLの値になります）
-              ・`http://localhost:<ポート>`
-              ・`http://<WSLまたはLANのIPアドレス>.sslip.io:<ポート>`（同一LAN上の別端末から確認する
-              　場合。IPアドレスは人間が手元の環境に合わせて読み替える）
-              ・Googleログインが必須のため、上記ポートの`/auth/callback`がSupabaseのRedirect URLsに
-              　登録されている必要がある旨も添える
-              - 新規にPRを作成する予定だった場合の文言例:「ブランチ `${{ steps.state.outputs.branch }}` の
-                内容を確認のうえ、問題なければ手動でPRを作成してください」
-              - 既存PRにコメントする予定だった場合の文言例:「ブランチ `${{ steps.state.outputs.branch }}`
-                に追加コミットをpushしました。Pull Request（${{ steps.state.outputs.pr_url }}）の内容を
-                確認してください」
-              コメント末尾に、このワークフロー実行への追跡用リンクとして
-              `実行ログ: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}`
-              を必ず追記する
-
-            - `23.preview-required`が付いていない場合（`24.screenshot-required`のみ、または
-              どちらも付いていない場合）は、通常どおり完了処理まで進めてください
+            いずれのラベルも付いていない場合は、通常どおり完了処理まで進めてください。
 
             ## 禁止事項
             - `main` / `develop` への直接コミット・push
@@ -1440,6 +1440,60 @@ jobs:
           BODY="$BODY"$'\n\n<!-- issue-deck-source:claude-issue-dispatch -->'$'\n\n<!-- issue-deck-agent:implementer -->'
           gh issue comment "$ISSUE_NUMBER" --body "$BODY"
           gh issue edit "$ISSUE_NUMBER" --add-label "00.check-user"
+
+  # 23.preview-requiredが付いているIssueで実装(implement/additional)が完了した場合、
+  # deploy-preview.ymlを呼び出し、実装ブランチ(issue-<番号>)を実際にFly.io Machines上へ
+  # デプロイする(#54)。developではなく実装ブランチそのものをデプロイ対象にするのは、develop向け
+  # PRのレビュー中に実際の変更内容を画面で確認できるようにするため。
+  #
+  # mode判定にはtriageジョブの出力(待機前の判定)ではなくdispatchジョブのoutputs.final_mode
+  # (「triageの判定結果を引き継ぐ」ステップの陳腐化チェック後の値)を使う。concurrencyの順番待ちの
+  # 間にIssueがクローズされる・00.check-userが付与される等でdispatch側がmode=skipへ倒した場合に、
+  # 実装が行われていないのにデプロイだけ走ってしまうのを防ぐため。
+  #
+  # 独自の`if:`条件を指定しているが、always()/failure()/cancelled()を使っていないため、
+  # GitHub Actionsの仕様によりsuccess()が暗黙にANDされる。そのためdispatchジョブが失敗した
+  # 場合はこのジョブも実行されない。
+  deploy-preview:
+    needs: [triage, dispatch]
+    if: needs.triage.outputs.preview_required == 'true' && (needs.dispatch.outputs.final_mode == 'implement' || needs.dispatch.outputs.final_mode == 'additional')
+    uses: ./.github/workflows/deploy-preview.yml
+    with:
+      ref: ${{ needs.triage.outputs.branch }}
+    secrets: inherit
+
+  # deploy-previewジョブの結果をIssueへ別コメントとして通知する。実装完了報告コメント
+  # (dispatchジョブ内のClaude Codeステップが投稿するもの)は、deploy-previewジョブの完了を
+  # 待たずに投稿される(fly deploy等を含み数分かかるため、実装ステップの中で同期的に待つことが
+  # できない)。実際に開けるプレビューURLは、本ジョブが後から別コメントとして追記する。
+  #
+  # `always()`で起動しつつ、deploy-previewがskipされた場合(preview_required=falseや
+  # mode不一致)は通知しない。deploy-previewが失敗した場合は成功時と同じジョブから失敗を報告する
+  # (notify-failureジョブと役割が重ならないよう、プレビューデプロイ固有の失敗はこちらで扱う)。
+  notify-preview-url:
+    needs: [triage, deploy-preview]
+    if: always() && needs.deploy-preview.result != 'skipped'
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    steps:
+      - name: プレビューURLをIssueに通知する
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          ISSUE_NUMBER: ${{ needs.triage.outputs.issue_number }}
+          PREVIEW_URL: ${{ needs.deploy-preview.outputs.preview_url }}
+          DEPLOY_RESULT: ${{ needs.deploy-preview.result }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -e
+          if [ "$DEPLOY_RESULT" = "success" ] && [ -n "$PREVIEW_URL" ]; then
+            BODY="🚀 プレビュー環境へのデプロイが完了しました。実際に開けるプレビューURLはこちらです: $PREVIEW_URL"
+          else
+            BODY="⚠️ プレビュー環境へのデプロイに失敗しました（結果: $DEPLOY_RESULT）。実行ログをご確認ください: $RUN_URL"
+          fi
+          BODY="$BODY"$'\n\n<!-- issue-deck-source:claude-issue-dispatch -->'$'\n\n<!-- issue-deck-agent:implementer -->'
+          gh issue comment "$ISSUE_NUMBER" --body "$BODY"
 
   # triage/dispatchジョブが「対応開始をコメントで通知する」ステップに到達する前に落ちた場合、
   # Issue側に痕跡が一切残らず、利用者からは処理が無反応のまま止まったようにしか見えない
