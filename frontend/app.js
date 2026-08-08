@@ -23,6 +23,8 @@ const el = {
   appRoot: document.getElementById('appRoot'),
   profileWrap: document.getElementById('profileWrap'),
   profileButton: document.getElementById('profileButton'),
+  profileAvatar: document.getElementById('profileAvatar'),
+  profileIcon: document.getElementById('profileIcon'),
   profileMenu: document.getElementById('profileMenu'),
   profileEmail: document.getElementById('profileEmail'),
   logoutButton: document.getElementById('logoutButton'),
@@ -110,6 +112,25 @@ function showApp(session) {
   el.appRoot.hidden = false;
   el.profileWrap.hidden = false;
   el.profileEmail.textContent = session?.user?.email || '';
+  setProfileAvatar(session?.user?.user_metadata?.avatar_url || session?.user?.user_metadata?.picture || '');
+}
+
+// Googleのプロフィール画像URLが取得できない場合や読み込みに失敗した場合は、
+// デフォルトのユーザーアイコン（SVG）にフォールバックする。
+function setProfileAvatar(avatarUrl) {
+  if (!avatarUrl) {
+    el.profileAvatar.hidden = true;
+    el.profileAvatar.src = '';
+    el.profileIcon.hidden = false;
+    return;
+  }
+  el.profileAvatar.onerror = () => {
+    el.profileAvatar.hidden = true;
+    el.profileIcon.hidden = false;
+  };
+  el.profileAvatar.src = avatarUrl;
+  el.profileAvatar.hidden = false;
+  el.profileIcon.hidden = true;
 }
 
 // ---- profile menu ----
