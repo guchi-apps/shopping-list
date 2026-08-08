@@ -1,4 +1,6 @@
-# PRごとのプレビュー環境用の雛形。
+# 23.preview-requiredラベル用のプレビュー環境の雛形（#54）。issue-deckと同様、PRごとの
+# 個別アプリではなく単一の共有アプリの中身をデプロイのたびに上書きする方式（.github/workflows/
+# deploy-preview.yml参照）。
 # app 名は仮のプレースホルダ。実アプリ名・Fly.io組織の確定は人間の判断待ち（#53 スコープ外）。
 app = "shopping-list-preview"
 primary_region = "nrt"

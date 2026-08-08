@@ -94,10 +94,10 @@ Issueごとの実装エージェントは、`npm version`系コマンド（`npm 
 |---|---|
 | `21.plan-required` | 実装前にPlan modeでの計画提示・承認を必須にする |
 | `22.merge-confirm-required` | 内容によらず常に`00.check-user`を付与し、自動マージをスキップする |
-| `23.preview-required` | PR作成前に開発サーバーURLでの画面確認・承認を必須にする |
+| `23.preview-required` | PR作成に連動してFly.ioへ自動デプロイし、そのプレビューURLでの画面確認が完了するまでdevelopへの自動マージを保留する |
 | `24.screenshot-required` | 実装完了後にPlaywrightで画面を自動撮影し、Issueコメントに埋め込んだうえで`00.check-user`を付与する |
 
-`24.screenshot-required`の無人撮影（#9で追加）は、CI専用ログインバイパス（`backend/auth.js`の`CI_AUTH_BYPASS_TOKEN`、#8）とNotion APIスタブ（`backend/notion-stub.js`、`NOTION_STUB=1`、#8）で開発サーバーを起動し、`scripts/capture-screenshots.mjs`（Playwright）で本体画面・追加/編集/更新履歴の3モーダルをデスクトップ／モバイルの2ビューポートで撮影、`scripts/capture-issue-screenshots.sh`が`scripts/post-issue-screenshot.sh`（#7）経由でscreenshotsブランチへ配置してIssueコメントに埋め込む。撮影は自動化されているが、developへのマージ前には必ず人間が結果を確認する設計のため、撮影後も`00.check-user`は付与される。`23.preview-required`は撮影の仕組みが無いIssue向けのラベルで、引き続き人間が開発サーバーを手元で起動して確認する運用のままとなる。
+`24.screenshot-required`の無人撮影（#9で追加）は、CI専用ログインバイパス（`backend/auth.js`の`CI_AUTH_BYPASS_TOKEN`、#8）とNotion APIスタブ（`backend/notion-stub.js`、`NOTION_STUB=1`、#8）で開発サーバーを起動し、`scripts/capture-screenshots.mjs`（Playwright）で本体画面・追加/編集/更新履歴の3モーダルをデスクトップ／モバイルの2ビューポートで撮影、`scripts/capture-issue-screenshots.sh`が`scripts/post-issue-screenshot.sh`（#7）経由でscreenshotsブランチへ配置してIssueコメントに埋め込む。撮影は自動化されているが、developへのマージ前には必ず人間が結果を確認する設計のため、撮影後も`00.check-user`は付与される。`23.preview-required`は実装ブランチ（`issue-<番号>`）をFly.io Machines上へ自動デプロイし、ブラウザだけで動作確認できる専用URLを用意するラベルである（#54）。`CI_AUTH_BYPASS_TOKEN`（`backend/auth.js`）と`NOTION_STUB`（`backend/notion-stub.js`）を流用し、本番のSupabase認証・Notionデータには一切接続しない。デプロイは`.github/workflows/deploy-preview.yml`（`workflow_call`）が担い、`claude-issue-dispatch.yml`の`deploy-preview`・`notify-preview-url`ジョブが実装完了後に呼び出してプレビューURLをIssueへ別コメントで通知する。PRごとの個別環境ではなく、issue-deckと同様にリポジトリ全体で単一の共有Fly.ioアプリの中身を都度上書きする方式のため、同時に複数Issueのプレビューを別URLで確認することはできない（`concurrency`で直列化・後勝ち）。developへのマージ前確認は`claude-review-develop.yml`の`risk-check`ジョブが`23.preview-required`を検知して`00.check-user`を付与する形でゲートする。
 
 ### 自動マージ不可カテゴリ（`00.check-user`付与対象）
 

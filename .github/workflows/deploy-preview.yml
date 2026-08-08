@@ -1,0 +1,87 @@
+name: Deploy Preview
+
+# 23.preview-requiredラベルが付いたIssueの実装ブランチをFly.io Machines上のプレビュー環境へ
+# 自動デプロイする（#54）。m-guchi/issue-deckの.github/workflows/deploy-preview.ymlと同じ
+# 「単一の共有アプリの中身を都度上書きする」方式を採用する（詳細はissue-deckのdocs/
+# preview-environment.md参照）。本リポジトリはNotionが唯一の情報源でDBを持たないため、
+# issue-deck側にある本番DBダンプ・サニタイズ処理は不要。
+#
+# workflow_call化しているのは、claude-issue-dispatch.ymlのdeploy-previewジョブから
+# 呼び出す想定のため。refは省略時developを対象にする。claude-issue-dispatch.ymlは
+# 23.preview-requiredが付いたissueの実装ブランチ（issue-<番号>）をレビュー用に表示したいため、
+# 呼び出し時に明示的に指定する。
+#
+# 認証・データソースはCI_AUTH_BYPASS_TOKEN（backend/auth.js）とNOTION_STUB=1
+# （backend/notion-stub.js）を流用し、本番Supabase認証・本番Notionには一切接続しない
+# （Plan mode承認済み、#54のIssueコメント参照）。
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "デプロイ対象のブランチ・コミット参照"
+        type: string
+        default: develop
+  workflow_call:
+    inputs:
+      ref:
+        description: "デプロイ対象のブランチ・コミット参照"
+        type: string
+        default: develop
+    outputs:
+      preview_url:
+        description: "デプロイ後のプレビューURL"
+        value: ${{ jobs.deploy.outputs.preview_url }}
+
+concurrency:
+  group: deploy-shopping-list-preview
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    outputs:
+      preview_url: ${{ steps.deploy.outputs.preview_url }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+
+      - name: Load secrets from 1Password
+        uses: 1password/load-secrets-action@v4
+        with:
+          export-env: true
+        env:
+          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+          OP_ENV_FILE: .github/deploy-preview.env.tpl
+
+      - name: Setup flyctl
+        uses: superfly/flyctl-actions/setup-flyctl@master
+
+      - name: fly secrets set
+        # CI専用ログインバイパストークンを実行のたびにランダム生成する
+        # （claude-issue-dispatch.ymlのスクリーンショット撮影ステップと同じ生成方法）。
+        # --stageで今回のdeployとまとめて反映する（このコマンド単体ではreleaseしない）。
+        run: |
+          set -euo pipefail
+          CI_AUTH_BYPASS_TOKEN="$(node -e "console.log(require('node:crypto').randomBytes(32).toString('hex'))")"
+          echo "::add-mask::$CI_AUTH_BYPASS_TOKEN"
+          flyctl secrets set --stage \
+            NOTION_STUB=1 \
+            CI_AUTH_BYPASS_TOKEN="$CI_AUTH_BYPASS_TOKEN"
+        env:
+          FLY_API_TOKEN: ${{ env.FLY_API_TOKEN }}
+
+      - name: fly deploy
+        id: deploy
+        run: |
+          set -euo pipefail
+          flyctl deploy --remote-only
+
+          APP_NAME=$(grep -m1 '^app = ' fly.toml | sed -E 's/app = "(.*)"/\1/')
+          PREVIEW_URL="https://${APP_NAME}.fly.dev"
+          echo "preview_url=${PREVIEW_URL}" >> "$GITHUB_OUTPUT"
+          echo "### プレビューURL: ${PREVIEW_URL}" >> "$GITHUB_STEP_SUMMARY"
+        env:
+          FLY_API_TOKEN: ${{ env.FLY_API_TOKEN }}
