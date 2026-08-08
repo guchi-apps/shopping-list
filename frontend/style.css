@@ -261,11 +261,14 @@ input::placeholder { color: rgba(43, 35, 32, 0.35); }
 .priority-dot.mid { background: var(--priority-mid); }
 .priority-dot.low { background: var(--priority-low); }
 
-.item-name {
+.item-main {
   flex: 1;
+  min-width: 0;
+}
+
+.item-name {
   font-size: 15.5px;
   color: var(--ink);
-  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -273,11 +276,12 @@ input::placeholder { color: rgba(43, 35, 32, 0.35); }
 .item-name.bought { color: var(--ink-35); text-decoration: line-through; }
 
 .item-memo {
-  font-size: 12.5px;
+  font-size: 12px;
   font-weight: 600;
   color: var(--ink-45);
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
-  flex-shrink: 0;
 }
 
 .fab {
