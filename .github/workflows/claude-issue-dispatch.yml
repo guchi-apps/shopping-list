@@ -7,11 +7,13 @@ name: Claude Issue Dispatch
 #
 # 移植時の改変:
 # - MySQLサービスコンテナ・pnpmセットアップ・`pnpm install`・DBマイグレーション・
-#   CIバイパス用ユーザーのシード・ダミーデータのシード・Playwrightインストールの
-#   前段ステップをすべて削除した。本リポジトリはDB・ビルド・npm依存パッケージを持たず、
-#   かつCIログインバイパス機構が無いためスクリーンショットの無人撮影に未対応
-# - `24.screenshot-required`が付いたIssueは、撮影を試みず`23.preview-required`と同様に
-#   人間の画面確認を待って停止する（専用の通知ステップを追加）
+#   CIバイパス用ユーザーのシード・ダミーデータのシードの前段ステップをすべて削除した。
+#   本リポジトリはDB・ビルドを持たない（#7〜#9でCIログインバイパス・Notion APIスタブ・
+#   Playwrightによる無人スクリーンショット撮影を追加済み。それ以外のnpm依存パッケージは
+#   引き続き持たない方針）
+# - `24.screenshot-required`が付いたIssueは、実装完了後にPlaywrightで自動撮影して
+#   Issueに投稿したうえで`00.check-user`を付与する（`23.preview-required`は自動撮影の
+#   仕組みが無いため、従来どおり人間の画面確認を待って停止する）
 # - 検証コマンドを`npm run check`に、allowedToolsを`Bash(npm:*)`/`Bash(node:*)`に置換
 #
 # Issueへの@claudeコメントを起点に、issue-<番号>ブランチ作成・実装・develop向けPR作成を
@@ -1055,22 +1057,6 @@ jobs:
         with:
           node-version: "20.19"
 
-      - name: 24.screenshot-required が未対応であることを通知する
-        # 本リポジトリは全画面がSupabase Auth + Google OAuthログインの背後にあり、issue-deckの
-        # CIログインバイパス機構(src/lib/ci-auth-bypass.ts相当)とNotion APIのスタブが存在しない
-        # ため、スクリーンショットの無人撮影が成立しない（issue-deckのdocs/cross-repo-automation.md
-        # のケーススタディ参照）。ラベルが付いていた場合は撮影を試みず、23.preview-requiredと同様に
-        # 人間の画面確認を待つ運用へ倒すことを、LLMの実行に依存しないシェルステップで明示的に伝える。
-        if: (steps.state.outputs.mode == 'implement' || steps.state.outputs.mode == 'additional') && steps.state.outputs.screenshot_required == 'true'
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -e
-          BODY='ℹ️ このIssueには`24.screenshot-required`が付いていますが、本リポジトリはスクリーンショットの無人撮影に未対応です（全画面がGoogleログインの背後にあり、CIログインバイパスとNotion APIのスタブが未実装のため）。'
-          BODY="$BODY"$'\n\n''代わりに`23.preview-required`と同じ扱いとし、実装・pushまで行ったうえで人間の画面確認を待って停止します。'
-          BODY="$BODY"$'\n\n<!-- issue-deck-source:claude-issue-dispatch -->'$'\n\n<!-- issue-deck-agent:guide -->'
-          gh issue comment ${{ steps.state.outputs.issue_number }} --body "$BODY"
-
       - name: 02.wip を付与する（実装着手時）
         # Claude Codeエージェント自身にラベル付与を委ねるとLLMの実行タイミング・忘れに
         # 依存してしまうため、実装着手前にシェルスクリプトで直接・確実に付与する。
@@ -1220,12 +1206,20 @@ jobs:
               日本語で含めること
 
             ## 画面確認について
-            このリポジトリでは、スクリーンショットの無人撮影に未対応です（全画面がSupabase Auth +
-            Google OAuthログインの背後にあり、CIログインバイパス機構とNotion APIのスタブが存在しない
-            ため）。そのため`24.screenshot-required`が付いている場合も撮影は試みず、
-            `23.preview-required`と同じ扱いにしてください。
+            `24.screenshot-required`が付いている場合、この実装ステップの完了後に後続のワークフロー
+            ステップが自動で動きます（CI専用ログインバイパス・Notion APIスタブ付きで開発サーバーを
+            起動し、Playwrightで本体画面・追加/編集/更新履歴の3モーダルをデスクトップ／モバイルの
+            2ビューポートで撮影して`gh issue comment`で投稿したうえで`00.check-user`を付与する。
+            撮影はこのステップでpushしたブランチの内容をそのまま使うため、実装エージェント自身が
+            撮影のために何かする必要はない）。撮影は自動化されていますが、developへのマージ前には
+            必ず人間が結果を確認する設計のため、`24.screenshot-required`が付いている場合も
+            （下記`23.preview-required`が同時に付いていない限り）特別扱いせず通常どおり完了処理
+            まで進めてください。
 
-            - Issueに`23.preview-required`または`24.screenshot-required`が付いている場合:
+            `23.preview-required`は自動撮影の仕組みが無いIssue向けのラベルで、引き続き人間による
+            手動確認が必要です。
+
+            - Issueに`23.preview-required`が付いている場合:
               実装・構文チェックまで終えた時点で上記の完了処理（新規PR作成またはPRコメント投稿）を行わず、
               ブランチのpushまでは行ったうえで、代わりに
               `gh issue edit ${{ steps.state.outputs.issue_number }} --add-label "00.check-user"`を実行し
@@ -1250,7 +1244,8 @@ jobs:
               `実行ログ: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}`
               を必ず追記する
 
-            - 上記いずれのラベルも付いていない場合は、通常どおり完了処理まで進めてください
+            - `23.preview-required`が付いていない場合（`24.screenshot-required`のみ、または
+              どちらも付いていない場合）は、通常どおり完了処理まで進めてください
 
             ## 禁止事項
             - `main` / `develop` への直接コミット・push
@@ -1397,6 +1392,53 @@ jobs:
 
           FALLBACK_BODY="$FALLBACK_BODY"$'\n\n<!-- issue-deck-source:claude-issue-dispatch -->'$'\n\n<!-- issue-deck-fallback-notice -->'
           gh issue comment "$ISSUE_NUMBER" --body "$FALLBACK_BODY"
+          gh issue edit "$ISSUE_NUMBER" --add-label "00.check-user"
+
+      - name: スクリーンショットを撮影してIssueに投稿する（24.screenshot-required）
+        # Issue #9で追加。実装ステップがpushしたブランチの内容をそのまま使うため、実装ステップの
+        # 成否に関わらずブランチの状態だけに依存する（PR作成の有無は問わない）。CI専用ログイン
+        # バイパストークンはこの実行だけの使い捨て値としてここで生成し、1Passwordへの恒久的な
+        # シークレット追加は行わない（#8の計画コメントで示された設計方針）。
+        # developへのマージ前に人間が撮影結果を確認できるよう、撮影後に必ず00.check-userを付与する。
+        if: steps.claude_implement.outcome == 'success' && (steps.state.outputs.mode == 'implement' || steps.state.outputs.mode == 'additional') && steps.state.outputs.screenshot_required == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ISSUE_NUMBER: ${{ steps.state.outputs.issue_number }}
+        run: |
+          set -e
+          npm ci
+          npx playwright install --with-deps chromium
+
+          CI_AUTH_BYPASS_TOKEN="$(node -e "console.log(require('node:crypto').randomBytes(32).toString('hex'))")"
+          echo "::add-mask::$CI_AUTH_BYPASS_TOKEN"
+
+          PORT=3101 CI_AUTH_BYPASS_TOKEN="$CI_AUTH_BYPASS_TOKEN" NOTION_STUB=1 node backend/index.js &
+          SERVER_PID=$!
+          trap 'kill "$SERVER_PID" 2>/dev/null || true' EXIT
+
+          READY=false
+          for _ in $(seq 1 30); do
+            if curl -fsS "http://localhost:3101/healthz" >/dev/null 2>&1; then
+              READY=true
+              break
+            fi
+            sleep 1
+          done
+          if [ "$READY" != "true" ]; then
+            echo "::warning::開発サーバーの起動を確認できなかったため、スクリーンショット撮影をスキップします"
+            exit 0
+          fi
+
+          MARKDOWN="$(CAPTURE_BASE_URL="http://localhost:3101" CI_AUTH_BYPASS_TOKEN="$CI_AUTH_BYPASS_TOKEN" NOTION_STUB=1 bash scripts/capture-issue-screenshots.sh "$ISSUE_NUMBER")"
+          if [ -z "$MARKDOWN" ]; then
+            echo "::warning::スクリーンショットの生成に失敗したため、投稿をスキップします"
+            exit 0
+          fi
+
+          BODY='📸 実装後の画面をデスクトップ／モバイルの2ビューポートで自動撮影しました。developへのマージ前に内容を確認してください。'
+          BODY="$BODY"$'\n\n'"$MARKDOWN"
+          BODY="$BODY"$'\n\n<!-- issue-deck-source:claude-issue-dispatch -->'$'\n\n<!-- issue-deck-agent:implementer -->'
+          gh issue comment "$ISSUE_NUMBER" --body "$BODY"
           gh issue edit "$ISSUE_NUMBER" --add-label "00.check-user"
 
   # triage/dispatchジョブが「対応開始をコメントで通知する」ステップに到達する前に落ちた場合、

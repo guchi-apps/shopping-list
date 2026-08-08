@@ -15,7 +15,7 @@ Issueごとの複数Claude Codeエージェント運用（`@claude`コメント�
 | バックエンド | Node.js（`backend/`）。`node:http`のみで**npm依存パッケージなし**。Notion APIの薄いプロキシ |
 | DB | **なし**（Notionが唯一の情報源。マイグレーション・シードの概念が存在しない） |
 | 認証 | Supabase Auth + Google OAuth。バックエンドが`node:crypto`でJWTを自前検証（`backend/auth.js`） |
-| パッケージマネージャ | npm。`dependencies`自体がないため`npm install`は不要 |
+| パッケージマネージャ | npm。ランタイムの`dependencies`は無いため通常の実装作業に`npm install`は不要。CI専用ツール（スクリーンショット撮影用のPlaywright）のみ`devDependencies`に持つ |
 | 検証コマンド | `npm run check`（`node --check`による構文チェック）。テスト・ビルド・型チェックは存在しない |
 | Node.jsバージョン | 20.19（`.github/workflows/ci.yml`の`actions/setup-node`指定値） |
 | 開発サーバー | `npm run dev`（＝`node backend/index.js`）。ポートは`PORT`環境変数で変更可（既定3101） |
@@ -29,7 +29,7 @@ Issueごとの複数Claude Codeエージェント運用（`@claude`コメント�
 
 新しい依存関係（パッケージ・ライブラリ・ツール）を追加する前には、必ずユーザーに確認を取る。`package.json`への追記や`npm install`等の実行は、確認が取れてから行う。
 
-このリポジトリは「npm依存パッケージを持たない」ことを意図的な設計方針としている（バックエンドは`node:http`のみ、フロントエンドはCDN動的import）。依存関係の追加はこの方針の変更にあたるため、判断のハードルは他リポジトリより高い。
+このリポジトリは「フロントエンド／バックエンドのランタイムはnpm依存パッケージを持たない」ことを意図的な設計方針としている（バックエンドは`node:http`のみ、フロントエンドはCDN動的import）。CI専用ツール（スクリーンショット撮影用のPlaywright、#9で追加）に限り`devDependencies`として例外的に許容しているが、それ以外の依存関係の追加はこの方針の変更にあたるため、判断のハードルは他リポジトリより高い。
 
 GitHub Actions上の無人実行では、その場で確認を取る相手がいない。依存関係の追加が必要だと判断した場合は追加せずに作業を止め、`00.check-user`ラベルを付与したうえで、なぜ必要かをIssueコメントで相談する。
 
@@ -93,9 +93,9 @@ GitHub Actions上の無人実行では、その場で確認を取る相手がい
 | `21.plan-required` | 実装前にPlan modeでの計画提示・承認を必須にする |
 | `22.merge-confirm-required` | 内容によらず常に`00.check-user`を付与し、自動マージをスキップする |
 | `23.preview-required` | PR作成前に開発サーバーURLでの画面確認・承認を必須にする |
-| `24.screenshot-required` | PR作成前にスクリーンショット取得・承認を必須にする。**このリポジトリでは未対応**（下記参照） |
+| `24.screenshot-required` | 実装完了後にPlaywrightで画面を自動撮影し、Issueコメントに埋め込んだうえで`00.check-user`を付与する |
 
-`24.screenshot-required`の無人撮影は、全画面がSupabase Auth + Google OAuthログインの背後にあり、CIログインバイパス機構とNotion APIのスタブが存在しないため現状成立しない。このラベルが付いたIssueを無人実行で受けた場合は撮影を試みず、`00.check-user`を付与して停止し、代わりに`23.preview-required`（人間が手元で確認する運用）での進行を提案する。
+`24.screenshot-required`の無人撮影（#9で追加）は、CI専用ログインバイパス（`backend/auth.js`の`CI_AUTH_BYPASS_TOKEN`、#8）とNotion APIスタブ（`backend/notion-stub.js`、`NOTION_STUB=1`、#8）で開発サーバーを起動し、`scripts/capture-screenshots.mjs`（Playwright）で本体画面・追加/編集/更新履歴の3モーダルをデスクトップ／モバイルの2ビューポートで撮影、`scripts/capture-issue-screenshots.sh`が`scripts/post-issue-screenshot.sh`（#7）経由でscreenshotsブランチへ配置してIssueコメントに埋め込む。撮影は自動化されているが、developへのマージ前には必ず人間が結果を確認する設計のため、撮影後も`00.check-user`は付与される。`23.preview-required`は撮影の仕組みが無いIssue向けのラベルで、引き続き人間が開発サーバーを手元で起動して確認する運用のままとなる。
 
 ### 自動マージ不可カテゴリ（`00.check-user`付与対象）
 
