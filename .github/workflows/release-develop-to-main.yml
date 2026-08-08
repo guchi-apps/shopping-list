@@ -16,20 +16,22 @@ name: Release develop to main
 #   構造化出力に`changelog`（ユーザーが画面で体感できる変更の一覧）を追加した。
 # - バンプPRの自動マージ（`gh pr merge --auto`）は行わない。自動生成した更新履歴の文面は
 #   ユーザー向けに公開されるため、人間のレビューを必ず挟む。
-# - develop→mainのPR作成も、バンプPRのdevelopマージをトリガーに無人で自動作成される
-#   仕様（移植元issue-deckの元の挙動）を廃止し、バンプPR作成と同様に
-#   workflow_dispatch（人間による手動起動）でのみ作成するよう変更した（#55）。
+# - #55での見直し: develop→mainのPR作成をworkflow_dispatch限定に変更する対応を一度入れたが、
+#   本当に自動連鎖を止めたかったのは「バージョンが人間の関与なく上がること」（Issueごとの
+#   実装コミットが`npm run version:patch`でバージョンを上げていた経路。CLAUDE.mdの
+#   「バージョンとリリース履歴（changelog）」を参照。この経路は#55で廃止済み）であり、
+#   develop→mainのPR作成そのものは自動でよいという結論になったため、push起点の自動作成
+#   （移植元issue-deckの元の挙動）に戻した。バンプPR自体の作成（バージョンを実際に上げる
+#   操作）はworkflow_dispatch限定のまま変更していない。
 #
 # release-to-mainスキルが定める手順のうち、「1. バージョンを上げる」
 # 「2. developへの反映（フィーチャーブランチ+PR）」「3. develop→mainのPRを作成する」までを
-# 自動化する。ただしいずれの手順も、人間がworkflow_dispatchで明示的に起動した場合にのみ
-# 実行される（後述のとおりpushトリガーは持たない）。
+# 自動化する。
 #
-# バンプPRがdevelopへマージされてpackage.jsonのversionが変わっても、本ワークフローは
-# 自動では再起動しない。develop→mainのPRを作成するには、バンプPRのマージ後に人間が
-# 改めてworkflow_dispatchで本ワークフローを起動する必要がある。develop→mainの実際の
-# マージ（マージコミット必須）はCLAUDE.mdの自動マージ不可カテゴリに該当するため、
-# これまでどおり人間が手動で行う。
+# バンプPRがdevelopへマージされてpackage.jsonのversionが変わると、
+# push(develop, paths:package.json)で本ワークフローが再度起動し、develop→mainのPRを
+# 自動作成する。develop→mainの実際のマージ（マージコミット必須）はCLAUDE.mdの
+# 自動マージ不可カテゴリに該当するため、これまでどおり人間が手動で行う。
 #
 # 状態はdevelop/mainのpackage.jsonのversionフィールドだけから判定する（他に状態を
 # 保持しない）。
@@ -42,11 +44,20 @@ name: Release develop to main
 # コード差分の内容からClaude Code（claude-code-action、--json-schemaによる構造化出力）が
 # semverに基づき判定する。判定に失敗した場合はpatchにフォールバックする。
 #
-# バンプPR・develop→mainのPRのいずれも人間の確認なしに作成されることを避けるため、
-# scheduleやpushでの自動起動は行わず、利用者のworkflow_dispatch（手動）でのみ起動する。
+# バンプPRの作成は人間の確認なしに走るため、scheduleでの自動起動はしない。起動は
+# 利用者のworkflow_dispatch（手動）と、バンプPRのdevelopマージに伴う
+# push(develop, paths:package.json)による自動連鎖のみとする。
 
 on:
   workflow_dispatch: {}
+  # バンプPRがdevelopへマージされ、package.jsonのversionが変わったときに再起動して
+  # develop→mainのPRを自動作成する。通常のフィーチャーpushではpackage.jsonが変わらない
+  # ため起動しない。need_bump系ステップはworkflow_dispatch限定にゲートしてあるため、
+  # push起点でバンプPRが誤作成されることはない。
+  push:
+    branches: [develop]
+    paths:
+      - package.json
 
 concurrency:
   # 同時に複数実行してバンプPRやdevelop→mainのPRを二重作成しないよう直列化する。
@@ -344,7 +355,7 @@ jobs:
             echo "## 注意点"
             echo "- このPRはGitHub Actionsが自動作成しました（\`.github/workflows/release-develop-to-main.yml\`）"
             echo "- 自動マージはされません。CI通過と更新履歴の文面を確認のうえ、ユーザーがマージしてください"
-            echo "- このPRがdevelopへマージされた後、develop→mainのリリースPRを作成するには本ワークフローを改めてworkflow_dispatchで手動起動してください"
+            echo "- このPRがdevelopへマージされると、ワークフローが再起動してdevelop→mainのリリースPRを自動作成します"
           } > /tmp/release-pr-body.md
 
           gh pr create --base develop --head "$BRANCH" \
@@ -352,9 +363,7 @@ jobs:
             --body-file /tmp/release-pr-body.md
 
       - name: develop→mainのPRを作成する
-        # バンプPR作成と同様、develop→mainのPR作成も人間の確認なしに走らないよう
-        # workflow_dispatch（手動起動）時のみ実行する（#55）。
-        if: steps.state.outputs.need_main_pr == 'true' && github.event_name == 'workflow_dispatch'
+        if: steps.state.outputs.need_main_pr == 'true'
         env:
           GH_TOKEN: ${{ secrets.WORKFLOW_PAT }}
           GH_REPO: ${{ github.repository }}
