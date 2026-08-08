@@ -239,8 +239,8 @@ input::placeholder { color: rgba(43, 35, 32, 0.35); }
 }
 
 .fab {
-  position: absolute;
-  right: 20px;
+  position: fixed;
+  right: max(20px, calc((100vw - 560px) / 2 + 20px));
   bottom: calc(26px + env(safe-area-inset-bottom));
   width: 56px;
   height: 56px;
