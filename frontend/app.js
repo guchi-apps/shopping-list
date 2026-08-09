@@ -1,6 +1,5 @@
 'use strict';
 
-const CATEGORIES = ['食品', '消耗品', '日用品', '趣味', 'その他'];
 const PRIORITIES = ['高', '中', '低'];
 const PRIORITY_CLASS = { 高: 'high', 中: 'mid', 低: 'low' };
 const PRIORITY_ORDER = { 高: 0, 中: 1, 低: 2 };
@@ -9,15 +8,18 @@ const SORT_LABELS = { added: '追加順', name: '名前順', priority: '優先�
 
 const state = {
   items: [],
+  categories: [],
   filter: 'all',
   sort: 'added',
   showBought: false,
   loading: true,
   error: null,
-  addDraft: { name: '', memo: '', category: '食品', priority: null },
+  addDraft: { name: '', memo: '', category: null, priority: null },
   editId: null,
-  editDraft: { name: '', memo: '', category: '食品', priority: null },
+  editDraft: { name: '', memo: '', category: null, priority: null },
 };
+
+let labelsEditingId = null;
 
 const el = {
   loginScreen: document.getElementById('loginScreen'),
@@ -55,6 +57,12 @@ const el = {
   changelogOverlay: document.getElementById('changelogOverlay'),
   changelogList: document.getElementById('changelogList'),
   changelogClose: document.getElementById('changelogClose'),
+  labelsButton: document.getElementById('labelsButton'),
+  labelsOverlay: document.getElementById('labelsOverlay'),
+  labelsList: document.getElementById('labelsList'),
+  labelsNewName: document.getElementById('labelsNewName'),
+  labelsAddButton: document.getElementById('labelsAddButton'),
+  labelsClose: document.getElementById('labelsClose'),
   confirmOverlay: document.getElementById('confirmOverlay'),
   confirmMessage: document.getElementById('confirmMessage'),
   confirmCancel: document.getElementById('confirmCancel'),
@@ -96,6 +104,12 @@ const createItemApi = (input) =>
 const updateItemApi = (id, input) =>
   apiRequest(`api/items/${id}`, { method: 'PATCH', body: JSON.stringify(input) }).then((d) => d.item);
 const deleteItemApi = (id) => apiRequest(`api/items/${id}`, { method: 'DELETE' });
+
+const fetchCategories = () => apiRequest('api/categories').then((d) => d.categories);
+const createCategoryApi = (name) =>
+  apiRequest('api/categories', { method: 'POST', body: JSON.stringify({ name }) }).then((d) => d.categories);
+const renameCategoryApi = (id, name) =>
+  apiRequest(`api/categories/${id}`, { method: 'PATCH', body: JSON.stringify({ name }) }).then((d) => d.categories);
 
 // ---- auth screens ----
 // 画面の出し分け（showLogin/showApp）とエラーメッセージ表示（setLoginError）は分離する。
@@ -205,9 +219,11 @@ function sortItems(items) {
 
 // ---- rendering: header controls ----
 function renderFilterTabs() {
-  const counts = { all: state.items.length };
-  for (const c of CATEGORIES) counts[c] = state.items.filter((it) => it.category === c).length;
-  const tabs = [['all', 'すべて'], ...CATEGORIES.map((c) => [c, c])];
+  const categoryNames = state.categories.map((c) => c.name);
+  const unboughtItems = state.items.filter((it) => !it.bought);
+  const counts = { all: unboughtItems.length };
+  for (const c of categoryNames) counts[c] = unboughtItems.filter((it) => it.category === c).length;
+  const tabs = [['all', 'すべて'], ...categoryNames.map((c) => [c, c])];
   el.filterTabs.innerHTML = '';
   for (const [key, label] of tabs) {
     const btn = document.createElement('button');
@@ -264,7 +280,7 @@ function renderList() {
     return;
   }
 
-  const groups = state.filter === 'all' ? CATEGORIES : [state.filter];
+  const groups = state.filter === 'all' ? state.categories.map((c) => c.name) : [state.filter];
 
   for (const category of groups) {
     const categoryItems = state.items.filter((it) => it.category === category);
@@ -346,13 +362,13 @@ function renderChipGroup(container, options, selected, onSelect) {
 }
 
 const priorityOptions = [{ value: null, label: '未設定' }, ...PRIORITIES.map((p) => ({ value: p, label: p }))];
-const categoryOptions = CATEGORIES.map((c) => ({ value: c, label: c }));
+const categoryChipOptions = () => state.categories.map((c) => ({ value: c.name, label: c.name }));
 
 // ---- add sheet ----
 function renderAddSheet() {
   el.addName.value = state.addDraft.name;
   el.addMemo.value = state.addDraft.memo;
-  renderChipGroup(el.addCategoryChips, categoryOptions, state.addDraft.category, (v) => {
+  renderChipGroup(el.addCategoryChips, categoryChipOptions(), state.addDraft.category, (v) => {
     state.addDraft.category = v;
     renderAddSheet();
   });
@@ -363,7 +379,7 @@ function renderAddSheet() {
 }
 
 function openAdd() {
-  state.addDraft = { name: '', memo: '', category: '食品', priority: null };
+  state.addDraft = { name: '', memo: '', category: state.categories[0]?.name ?? null, priority: null };
   el.addOverlay.hidden = false;
   renderAddSheet();
   el.addName.focus();
@@ -395,7 +411,7 @@ async function submitAdd() {
 function renderEditSheet() {
   el.editName.value = state.editDraft.name;
   el.editMemo.value = state.editDraft.memo;
-  renderChipGroup(el.editCategoryChips, categoryOptions, state.editDraft.category, (v) => {
+  renderChipGroup(el.editCategoryChips, categoryChipOptions(), state.editDraft.category, (v) => {
     state.editDraft.category = v;
     renderEditSheet();
   });
@@ -485,6 +501,87 @@ function closeChangelog() {
   el.changelogOverlay.hidden = true;
 }
 
+// ---- labels (categories) ----
+function renderLabelsList() {
+  el.labelsList.innerHTML = '';
+  for (const category of state.categories) {
+    const row = document.createElement('div');
+    row.className = 'labels-row';
+    if (labelsEditingId === category.id) {
+      row.innerHTML = `
+        <input type="text" class="input labels-edit-input" maxlength="100">
+        <button type="button" class="btn-primary labels-save">保存</button>
+        <button type="button" class="btn-secondary labels-cancel">キャンセル</button>
+      `;
+      const input = row.querySelector('.labels-edit-input');
+      input.value = category.name;
+      row.querySelector('.labels-save').addEventListener('click', () => {
+        submitRenameLabel(category, input.value);
+      });
+      row.querySelector('.labels-cancel').addEventListener('click', () => {
+        labelsEditingId = null;
+        renderLabelsList();
+      });
+    } else {
+      row.innerHTML = `
+        <span class="labels-name"></span>
+        <button type="button" class="labels-edit-btn">編集</button>
+      `;
+      row.querySelector('.labels-name').textContent = category.name;
+      row.querySelector('.labels-edit-btn').addEventListener('click', () => {
+        labelsEditingId = category.id;
+        renderLabelsList();
+      });
+    }
+    el.labelsList.appendChild(row);
+  }
+}
+
+function openLabels() {
+  labelsEditingId = null;
+  el.labelsNewName.value = '';
+  el.labelsOverlay.hidden = false;
+  renderLabelsList();
+}
+function closeLabels() {
+  el.labelsOverlay.hidden = true;
+}
+
+async function submitRenameLabel(category, rawName) {
+  const name = rawName.trim();
+  if (!name) return;
+  try {
+    state.categories = await renameCategoryApi(category.id, name);
+    state.items = state.items.map((it) =>
+      it.category === category.name ? { ...it, category: name } : it
+    );
+    if (state.filter === category.name) state.filter = name;
+    labelsEditingId = null;
+    renderLabelsList();
+    render();
+    showToast('保存しました');
+  } catch (err) {
+    showToast(err.message);
+  }
+}
+
+async function submitAddLabel() {
+  const name = el.labelsNewName.value.trim();
+  if (!name) { el.labelsNewName.focus(); return; }
+  el.labelsAddButton.disabled = true;
+  try {
+    state.categories = await createCategoryApi(name);
+    el.labelsNewName.value = '';
+    renderLabelsList();
+    render();
+    showToast('追加しました');
+  } catch (err) {
+    showToast(err.message);
+  } finally {
+    el.labelsAddButton.disabled = false;
+  }
+}
+
 // ---- wiring ----
 function bindEvents() {
   el.loginButton.addEventListener('click', async () => {
@@ -536,6 +633,14 @@ function bindEvents() {
   el.changelogClose.addEventListener('click', closeChangelog);
   el.changelogOverlay.addEventListener('click', (e) => { if (e.target === el.changelogOverlay) closeChangelog(); });
 
+  el.labelsButton.addEventListener('click', () => {
+    closeProfileMenu();
+    openLabels();
+  });
+  el.labelsClose.addEventListener('click', closeLabels);
+  el.labelsOverlay.addEventListener('click', (e) => { if (e.target === el.labelsOverlay) closeLabels(); });
+  el.labelsAddButton.addEventListener('click', submitAddLabel);
+
   el.confirmCancel.addEventListener('click', () => closeConfirmDialog(false));
   el.confirmOk.addEventListener('click', () => closeConfirmDialog(true));
   el.confirmOverlay.addEventListener('click', (e) => { if (e.target === el.confirmOverlay) closeConfirmDialog(false); });
@@ -545,6 +650,7 @@ function bindEvents() {
     if (!el.confirmOverlay.hidden) closeConfirmDialog(false);
     else if (!el.editOverlay.hidden) closeEdit();
     else if (!el.addOverlay.hidden) closeAdd();
+    else if (!el.labelsOverlay.hidden) closeLabels();
     else if (!el.changelogOverlay.hidden) closeChangelog();
     else if (!el.profileMenu.hidden) closeProfileMenu();
   });
@@ -575,7 +681,9 @@ async function loadItems() {
   state.error = null;
   render();
   try {
-    state.items = await fetchItems();
+    const [items, categories] = await Promise.all([fetchItems(), fetchCategories()]);
+    state.items = items;
+    state.categories = categories;
     state.loading = false;
   } catch (err) {
     state.loading = false;
