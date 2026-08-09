@@ -81,8 +81,10 @@ function readBody(req) {
   });
 }
 
-function validateCategory(category) {
-  return category === null || category === undefined || notion.CATEGORY_LABELS.includes(category);
+async function validateCategory(category) {
+  if (category === null || category === undefined) return true;
+  const categories = await notion.getCategoryOptions(NOTION_TOKEN, NOTION_DATA_SOURCE_ID);
+  return categories.some((c) => c.name === category);
 }
 
 function validatePriority(priority) {
@@ -105,6 +107,7 @@ async function handleApi(req, res, pathname) {
   }
 
   const itemMatch = pathname.match(/^\/api\/items\/([^/]+)$/);
+  const categoryMatch = pathname.match(/^\/api\/categories\/([^/]+)$/);
 
   if (pathname === '/api/items' && req.method === 'GET') {
     const items = await notion.listItems(NOTION_TOKEN, NOTION_DATA_SOURCE_ID);
@@ -115,7 +118,7 @@ async function handleApi(req, res, pathname) {
     const body = await readBody(req);
     const name = typeof body.name === 'string' ? body.name.trim() : '';
     if (!name) return sendJson(res, 400, { error: 'name は必須です' });
-    if (!validateCategory(body.category)) return sendJson(res, 400, { error: 'category が不正です' });
+    if (!(await validateCategory(body.category))) return sendJson(res, 400, { error: 'category が不正です' });
     if (!validatePriority(body.priority)) return sendJson(res, 400, { error: 'priority が不正です' });
     const item = await notion.createItem(NOTION_TOKEN, NOTION_DATA_SOURCE_ID, {
       name,
@@ -128,7 +131,7 @@ async function handleApi(req, res, pathname) {
 
   if (itemMatch && req.method === 'PATCH') {
     const body = await readBody(req);
-    if (body.category !== undefined && !validateCategory(body.category)) {
+    if (body.category !== undefined && !(await validateCategory(body.category))) {
       return sendJson(res, 400, { error: 'category が不正です' });
     }
     if (body.priority !== undefined && !validatePriority(body.priority)) {
@@ -147,6 +150,32 @@ async function handleApi(req, res, pathname) {
     await notion.archiveItem(NOTION_TOKEN, itemMatch[1]);
     res.writeHead(204);
     return res.end();
+  }
+
+  if (pathname === '/api/categories' && req.method === 'GET') {
+    const categories = await notion.getCategoryOptions(NOTION_TOKEN, NOTION_DATA_SOURCE_ID);
+    return sendJson(res, 200, { categories });
+  }
+
+  if (pathname === '/api/categories' && req.method === 'POST') {
+    const body = await readBody(req);
+    const name = typeof body.name === 'string' ? body.name.trim() : '';
+    if (!name) return sendJson(res, 400, { error: 'name は必須です' });
+    const categories = await notion.addCategoryOption(NOTION_TOKEN, NOTION_DATA_SOURCE_ID, name);
+    return sendJson(res, 201, { categories });
+  }
+
+  if (categoryMatch && req.method === 'PATCH') {
+    const body = await readBody(req);
+    const name = typeof body.name === 'string' ? body.name.trim() : '';
+    if (!name) return sendJson(res, 400, { error: 'name は必須です' });
+    const categories = await notion.renameCategoryOption(
+      NOTION_TOKEN,
+      NOTION_DATA_SOURCE_ID,
+      categoryMatch[1],
+      name
+    );
+    return sendJson(res, 200, { categories });
   }
 
   return sendJson(res, 404, { error: 'Not Found' });

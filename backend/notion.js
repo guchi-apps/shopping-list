@@ -11,7 +11,6 @@ const PROP = {
   bought: '購入済み',
 };
 
-const CATEGORY_LABELS = ['食品', '消耗品', '日用品', '趣味', 'その他'];
 const PRIORITY_LABELS = ['高', '中', '低'];
 
 function assertConfig(token, dataSourceId) {
@@ -128,11 +127,58 @@ async function archiveItem(token, pageId) {
   });
 }
 
+function selectOptionsToCategories(options) {
+  return (options ?? []).map((o) => ({ id: o.id, name: o.name, color: o.color }));
+}
+
+async function getCategoryOptions(token, dataSourceId) {
+  assertConfig(token, dataSourceId);
+  const dataSource = await notionFetch(token, `/data_sources/${dataSourceId}`);
+  return selectOptionsToCategories(dataSource.properties?.[PROP.category]?.select?.options);
+}
+
+async function updateCategorySelectOptions(token, dataSourceId, options) {
+  const dataSource = await notionFetch(token, `/data_sources/${dataSourceId}`, {
+    method: 'PATCH',
+    body: JSON.stringify({
+      properties: {
+        [PROP.category]: { type: 'select', select: { options } },
+      },
+    }),
+  });
+  return selectOptionsToCategories(dataSource.properties?.[PROP.category]?.select?.options);
+}
+
+async function addCategoryOption(token, dataSourceId, name) {
+  assertConfig(token, dataSourceId);
+  const current = await getCategoryOptions(token, dataSourceId);
+  if (current.some((c) => c.name === name)) {
+    throw new Error('同じ名前のカテゴリが既に存在します');
+  }
+  const nextOptions = [...current.map((c) => ({ id: c.id })), { name }];
+  return updateCategorySelectOptions(token, dataSourceId, nextOptions);
+}
+
+async function renameCategoryOption(token, dataSourceId, optionId, name) {
+  assertConfig(token, dataSourceId);
+  const current = await getCategoryOptions(token, dataSourceId);
+  if (!current.some((c) => c.id === optionId)) {
+    throw new Error('カテゴリが見つかりません');
+  }
+  if (current.some((c) => c.id !== optionId && c.name === name)) {
+    throw new Error('同じ名前のカテゴリが既に存在します');
+  }
+  const nextOptions = current.map((c) => (c.id === optionId ? { id: c.id, name } : { id: c.id }));
+  return updateCategorySelectOptions(token, dataSourceId, nextOptions);
+}
+
 module.exports = {
-  CATEGORY_LABELS,
   PRIORITY_LABELS,
   listItems,
   createItem,
   updateItem,
   archiveItem,
+  getCategoryOptions,
+  addCategoryOption,
+  renameCategoryOption,
 };

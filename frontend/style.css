@@ -459,6 +459,67 @@ input::placeholder, textarea::placeholder { color: rgba(43, 35, 32, 0.35); }
   cursor: pointer;
 }
 
+.labels-button {
+  border: none;
+  background: none;
+  color: var(--ink-40);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  text-align: left;
+  padding: 8px 6px;
+}
+
+.labels-list { display: flex; flex-direction: column; gap: 8px; margin-bottom: 16px; }
+
+.labels-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: #fff;
+  border-radius: 14px;
+  padding: 10px 12px;
+  border: 1px solid var(--ink-10);
+}
+
+.labels-name {
+  flex: 1;
+  font-size: 14.5px;
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.labels-edit-btn {
+  border: 1px solid var(--ink-12);
+  background: #fff;
+  color: var(--ink-55);
+  font-size: 12.5px;
+  font-weight: 600;
+  border-radius: 10px;
+  padding: 6px 10px;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.labels-row .input {
+  flex: 1;
+  margin-bottom: 0;
+}
+
+.labels-row .btn-primary,
+.labels-row .btn-secondary {
+  width: auto;
+  flex: none;
+  padding: 8px 14px;
+  font-size: 13px;
+}
+
+.labels-add-row { display: flex; gap: 8px; align-items: center; }
+.labels-add-row .input { flex: 1; margin-bottom: 0; }
+.labels-add-row .btn-primary { width: auto; flex: none; padding: 0 18px; }
+
 .confirm-message { font-size: 14.5px; color: var(--ink); margin: 0 0 20px; }
 
 .changelog-list { display: flex; flex-direction: column; gap: 16px; }
@@ -534,6 +595,8 @@ input::placeholder, textarea::placeholder { color: rgba(43, 35, 32, 0.35); }
   .sort-toggle,
   .version-badge,
   .logout-button,
+  .labels-button,
+  .labels-edit-btn,
   .show-bought-toggle {
     transition: background-color 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
   }
@@ -552,5 +615,7 @@ input::placeholder, textarea::placeholder { color: rgba(43, 35, 32, 0.35); }
   .sheet-close:hover,
   .sort-toggle:hover,
   .version-badge:hover,
+  .labels-button:hover,
   .logout-button:hover { color: var(--ink); }
+  .labels-edit-btn:hover { border-color: var(--ink-18); }
 }

@@ -41,6 +41,7 @@
         </button>
         <div class="profile-menu" id="profileMenu" hidden>
           <p class="profile-email" id="profileEmail"></p>
+          <button type="button" class="labels-button" id="labelsButton">ラベルを編集</button>
           <button type="button" class="version-badge" id="versionBadge"></button>
           <button type="button" class="logout-button" id="logoutButton">ログアウト</button>
         </div>
@@ -101,6 +102,21 @@
       <button type="button" class="sheet-close" id="changelogClose" aria-label="閉じる">×</button>
     </div>
     <div id="changelogList" class="changelog-list"></div>
+  </div>
+</div>
+
+<div class="sheet-overlay" id="labelsOverlay" hidden>
+  <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="labelsTitle">
+    <div class="sheet-header">
+      <h2 id="labelsTitle">ラベルを編集</h2>
+      <button type="button" class="sheet-close" id="labelsClose" aria-label="閉じる">×</button>
+    </div>
+    <div id="labelsList" class="labels-list"></div>
+    <div class="field-label">新しいラベルを追加</div>
+    <div class="labels-add-row">
+      <input type="text" class="input" id="labelsNewName" placeholder="ラベル名を入力" maxlength="100">
+      <button type="button" class="btn-primary" id="labelsAddButton">追加</button>
+    </div>
   </div>
 </div>
 
