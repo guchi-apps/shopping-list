@@ -1,8 +1,15 @@
 'use strict';
 
-const APP_VERSION = '0.5.1';
+const APP_VERSION = '0.6.0';
 
 const APP_CHANGELOG = [
+  {
+    version: '0.6.0',
+    date: '2026-08-09',
+    changes: [
+      'ラベル編集画面で、ラベルの並び順を↑↓ボタンで入れ替えられるようにしました。',
+    ],
+  },
   {
     version: '0.5.1',
     date: '2026-08-09',
