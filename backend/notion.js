@@ -172,6 +172,22 @@ async function renameCategoryOption(token, dataSourceId, optionId, name) {
   return updateCategorySelectOptions(token, dataSourceId, nextOptions);
 }
 
+async function reorderCategoryOptions(token, dataSourceId, orderedIds) {
+  assertConfig(token, dataSourceId);
+  const current = await getCategoryOptions(token, dataSourceId);
+  const currentIds = new Set(current.map((c) => c.id));
+  const orderedIdsSet = new Set(orderedIds);
+  if (
+    orderedIds.length !== current.length ||
+    orderedIds.some((id) => !currentIds.has(id)) ||
+    current.some((c) => !orderedIdsSet.has(c.id))
+  ) {
+    throw new Error('カテゴリの並び替え内容が現在の状態と一致しません');
+  }
+  const nextOptions = orderedIds.map((id) => ({ id }));
+  return updateCategorySelectOptions(token, dataSourceId, nextOptions);
+}
+
 module.exports = {
   PRIORITY_LABELS,
   listItems,
@@ -181,4 +197,5 @@ module.exports = {
   getCategoryOptions,
   addCategoryOption,
   renameCategoryOption,
+  reorderCategoryOptions,
 };

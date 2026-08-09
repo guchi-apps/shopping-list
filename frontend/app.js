@@ -110,6 +110,8 @@ const createCategoryApi = (name) =>
   apiRequest('api/categories', { method: 'POST', body: JSON.stringify({ name }) }).then((d) => d.categories);
 const renameCategoryApi = (id, name) =>
   apiRequest(`api/categories/${id}`, { method: 'PATCH', body: JSON.stringify({ name }) }).then((d) => d.categories);
+const reorderCategoriesApi = (order) =>
+  apiRequest('api/categories/order', { method: 'PATCH', body: JSON.stringify({ order }) }).then((d) => d.categories);
 
 // ---- auth screens ----
 // 画面の出し分け（showLogin/showApp）とエラーメッセージ表示（setLoginError）は分離する。
@@ -504,7 +506,7 @@ function closeChangelog() {
 // ---- labels (categories) ----
 function renderLabelsList() {
   el.labelsList.innerHTML = '';
-  for (const category of state.categories) {
+  state.categories.forEach((category, index) => {
     const row = document.createElement('div');
     row.className = 'labels-row';
     if (labelsEditingId === category.id) {
@@ -525,16 +527,24 @@ function renderLabelsList() {
     } else {
       row.innerHTML = `
         <span class="labels-name"></span>
+        <button type="button" class="labels-move-btn labels-move-up" aria-label="上に移動">↑</button>
+        <button type="button" class="labels-move-btn labels-move-down" aria-label="下に移動">↓</button>
         <button type="button" class="labels-edit-btn">編集</button>
       `;
       row.querySelector('.labels-name').textContent = category.name;
+      const upBtn = row.querySelector('.labels-move-up');
+      const downBtn = row.querySelector('.labels-move-down');
+      upBtn.disabled = index === 0;
+      downBtn.disabled = index === state.categories.length - 1;
+      upBtn.addEventListener('click', () => submitReorderLabel(index, index - 1));
+      downBtn.addEventListener('click', () => submitReorderLabel(index, index + 1));
       row.querySelector('.labels-edit-btn').addEventListener('click', () => {
         labelsEditingId = category.id;
         renderLabelsList();
       });
     }
     el.labelsList.appendChild(row);
-  }
+  });
 }
 
 function openLabels() {
@@ -560,6 +570,20 @@ async function submitRenameLabel(category, rawName) {
     renderLabelsList();
     render();
     showToast('保存しました');
+  } catch (err) {
+    showToast(err.message);
+  }
+}
+
+async function submitReorderLabel(fromIndex, toIndex) {
+  if (toIndex < 0 || toIndex >= state.categories.length) return;
+  const reordered = state.categories.slice();
+  const [moved] = reordered.splice(fromIndex, 1);
+  reordered.splice(toIndex, 0, moved);
+  try {
+    state.categories = await reorderCategoriesApi(reordered.map((c) => c.id));
+    renderLabelsList();
+    render();
   } catch (err) {
     showToast(err.message);
   }

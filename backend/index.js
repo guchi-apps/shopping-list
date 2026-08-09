@@ -165,6 +165,16 @@ async function handleApi(req, res, pathname) {
     return sendJson(res, 201, { categories });
   }
 
+  if (pathname === '/api/categories/order' && req.method === 'PATCH') {
+    const body = await readBody(req);
+    const order = body.order;
+    if (!Array.isArray(order) || order.length === 0 || order.some((id) => typeof id !== 'string' || !id)) {
+      return sendJson(res, 400, { error: 'order は空でない文字列の配列である必要があります' });
+    }
+    const categories = await notion.reorderCategoryOptions(NOTION_TOKEN, NOTION_DATA_SOURCE_ID, order);
+    return sendJson(res, 200, { categories });
+  }
+
   if (categoryMatch && req.method === 'PATCH') {
     const body = await readBody(req);
     const name = typeof body.name === 'string' ? body.name.trim() : '';
