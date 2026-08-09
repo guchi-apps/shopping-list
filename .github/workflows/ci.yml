@@ -50,8 +50,33 @@ jobs:
           fi
           echo "タグ ${TAG} は未使用です。"
 
+  # ワークフローの式テンプレート長（21,000バイト）超過を検出する。
+  # 超過するとワークフローファイル自体が無効になり、issue_comment等のトリガーが
+  # 一切発火しなくなるため、developへ入る前に落とす（issue-deck#901・本リポジトリ#74）。
+  workflow-expression-length-check:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Workflow expression length check
+        run: node scripts/check-workflow-expression-length.mjs
+
+  # checkoutしないジョブでghを使いながらリポジトリ指定が無いステップを検出する
+  # （issue-deck#929・本リポジトリ#74）。
+  workflow-gh-repo-check:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Workflow gh repository check
+        run: scripts/check-workflow-gh-repo.sh
+
   notify:
-    needs: [lint, version-check]
+    needs: [lint, version-check, workflow-expression-length-check, workflow-gh-repo-check]
     if: always()
     runs-on: ubuntu-latest
 
@@ -64,18 +89,20 @@ jobs:
         run: |
           lint="${{ needs.lint.result }}"
           version_check="${{ needs.version-check.result }}"
-          if [ "$lint" = "success" ] && [ "$version_check" != "failure" ]; then
+          expr_len="${{ needs.workflow-expression-length-check.result }}"
+          gh_repo="${{ needs.workflow-gh-repo-check.result }}"
+          if [ "$lint" = "success" ] && [ "$expr_len" = "success" ] && [ "$gh_repo" = "success" ] && [ "$version_check" != "failure" ]; then
             result=success
-          elif [ "$lint" = "cancelled" ] || [ "$version_check" = "cancelled" ]; then
+          elif [ "$lint" = "cancelled" ] || [ "$version_check" = "cancelled" ] || [ "$expr_len" = "cancelled" ] || [ "$gh_repo" = "cancelled" ]; then
             result=cancelled
           else
             result=failure
           fi
           echo "result=$result" >> "$GITHUB_OUTPUT"
           if [ "$result" = "success" ]; then
-            echo "jobs=lint, version-check" >> "$GITHUB_OUTPUT"
+            echo "jobs=lint, version-check, workflow-expression-length-check, workflow-gh-repo-check" >> "$GITHUB_OUTPUT"
           else
-            echo "jobs=lint: $lint, version-check: $version_check" >> "$GITHUB_OUTPUT"
+            echo "jobs=lint: $lint, version-check: $version_check, workflow-expression-length-check: $expr_len, workflow-gh-repo-check: $gh_repo" >> "$GITHUB_OUTPUT"
           fi
           # develop push: failure only. main PR: success, failure, and cancelled.
           if [ "$result" = "failure" ]; then
