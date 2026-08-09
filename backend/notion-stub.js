@@ -72,6 +72,20 @@ async function renameCategoryOption(_token, _dataSourceId, optionId, name) {
   return categoryOptions.map((c) => ({ ...c }));
 }
 
+async function reorderCategoryOptions(_token, _dataSourceId, orderedIds) {
+  const currentIds = new Set(categoryOptions.map((c) => c.id));
+  const orderedIdsSet = new Set(orderedIds);
+  if (
+    orderedIds.length !== categoryOptions.length ||
+    orderedIds.some((id) => !currentIds.has(id)) ||
+    categoryOptions.some((c) => !orderedIdsSet.has(c.id))
+  ) {
+    throw new Error('カテゴリの並び替え内容が現在の状態と一致しません');
+  }
+  categoryOptions = orderedIds.map((id) => categoryOptions.find((c) => c.id === id));
+  return categoryOptions.map((c) => ({ ...c }));
+}
+
 module.exports = {
   PRIORITY_LABELS,
   listItems,
@@ -81,4 +95,5 @@ module.exports = {
   getCategoryOptions,
   addCategoryOption,
   renameCategoryOption,
+  reorderCategoryOptions,
 };
