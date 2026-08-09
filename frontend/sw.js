@@ -4,7 +4,7 @@
 // importScripts先（changelog.js）の変更だけでは新しいService Workerとして
 // 認識されない。そのためリリースごとにこの値がバイト単位で変化するよう、
 // scripts/version-changelog.mjs がバージョンアップ時に自動で書き換える。
-const SW_VERSION = '0.5.0';
+const SW_VERSION = '0.5.1';
 
 const CACHE_NAME = `shopping-list-${SW_VERSION}`;
 const APP_SHELL = [
