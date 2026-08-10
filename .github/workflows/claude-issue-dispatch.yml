@@ -3,18 +3,18 @@ name: Claude Issue Dispatch
 # Issueへの@claudeコメントを起点にした無人実行の、本リポジトリ側のトリガー定義。
 #
 # ジョブ本体は持たず、issue-deckの再利用可能ワークフローを参照する
-# (m-guchi/issue-deck#934・#945、本リポジトリ#81)。従来はワークフローをコピーして
+# (guchi-apps/issue-deck#934・#945、本リポジトリ#81)。従来はワークフローをコピーして
 # 持っていたが、issue-deck側の改善を手でバックポートし続ける運用が対象リポジトリの
 # 増加に耐えないため、本体をissue-deckへ集約する方式へ移行した。
 #
 # 本リポジトリ固有の差異はwith:で吸収する。
 #   runtime-setup: minimal   DBなし・依存パッケージはplaywrightのみ
-#   node-version:  20.19     ci.ymlと揃える(m-guchi/issue-deck#956)
+#   node-version:  20.19     ci.ymlと揃える(guchi-apps/issue-deck#956)
 #   post-implement-script    撮影は自前バックエンドの起動が必要なため独自スクリプト
-#                            (m-guchi/issue-deck#952、本リポジトリ#79)
+#                            (guchi-apps/issue-deck#952、本リポジトリ#79)
 #   prompts-ref              プロンプトはissue-deck側のものを使う。指定しないと本リポジトリの
 #                            .github/prompts/が読まれ、存在しないため落ちる
-#                            (m-guchi/issue-deck#960)。uses:と同じタグを指定すること
+#                            (guchi-apps/issue-deck#960)。uses:と同じタグを指定すること
 #
 # 参照はタグ固定にする。@developを参照するとissue-deck側の不具合が即座に波及するため。
 # issue-deck自身だけがローカルパス参照で常に最新を使い、カナリアとして先に問題を検知する。
@@ -43,7 +43,7 @@ on:
 
 jobs:
   dispatch:
-    uses: m-guchi/issue-deck/.github/workflows/reusable-issue-dispatch.yml@workflows/v6
+    uses: guchi-apps/issue-deck/.github/workflows/reusable-issue-dispatch.yml@workflows/v6
     with:
       runtime-setup: minimal
       package-manager: npm
