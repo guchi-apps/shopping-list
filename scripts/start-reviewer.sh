@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# m-guchi/issue-deck の scripts/start-reviewer.sh を移植したもの（リポジトリ名・検証コマンドのみ変更）。
+# guchi-apps/issue-deck の scripts/start-reviewer.sh を移植したもの（リポジトリ名・検証コマンドのみ変更）。
 #
 # develop向けの未処理PR一覧を把握した状態で、レビュー・統合エージェント用のClaude Codeセッションを起動する。
 #
@@ -17,7 +17,7 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PROMPT_TEMPLATE="$ROOT/scripts/prompts/review-agent.md"
-REPO="m-guchi/shopping-list"
+REPO="guchi-apps/shopping-list"
 
 if ! command -v gh >/dev/null 2>&1; then
   echo "Error: gh コマンドが見つかりません。" >&2
@@ -122,7 +122,7 @@ PY
 )"
 
 echo "Claude Codeセッションを起動します（このターミナルで実行）..."
-# 全アプリ共通の共有知識リポジトリ（m-guchi/docs）をローカルにcloneしてある場合は、
+# 全アプリ共通の共有知識リポジトリ（guchi-apps/docs）をローカルにcloneしてある場合は、
 # --add-dir でリポジトリ外のそのディレクトリも参照できるようにする（issue-deckの
 # docs/shared-knowledge.md「8. Claude Codeへのコンテキストの渡し方」）。cloneしていない
 # 環境でも起動できるよう、存在しない場合は --add-dir を付けずにそのまま起動する。
