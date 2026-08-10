@@ -1,6 +1,6 @@
 name: Release develop to main
 
-# m-guchi/issue-deck の .github/workflows/release-develop-to-main.yml を移植したもの。
+# guchi-apps/issue-deck の .github/workflows/release-develop-to-main.yml を移植したもの。
 # 移植元コミット: 29958837e7569c852740742dfd30daa2c03e89fc
 # 導入手順は issue-deck の docs/cross-repo-setup-guide.md を参照。
 # 以下のコメント中の #番号 は issue-deck 側のIssue番号を指す。

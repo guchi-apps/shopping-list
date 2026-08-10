@@ -2,7 +2,7 @@
 
 このリポジトリで作業するClaude Codeエージェント向けのルールを記載する。
 
-Issueごとの複数Claude Codeエージェント運用（`@claude`コメント起点の計画〜実装〜PR作成〜レビュー〜マージまでの無人実行）は、[m-guchi/issue-deck](https://github.com/m-guchi/issue-deck) で設計・運用されている仕組みを移植したものである。設計の背景は issue-deck の `docs/multi-agent-workflow.md`、他リポジトリへの導入手順は `docs/cross-repo-setup-guide.md` を参照する。
+Issueごとの複数Claude Codeエージェント運用（`@claude`コメント起点の計画〜実装〜PR作成〜レビュー〜マージまでの無人実行）は、[guchi-apps/issue-deck](https://github.com/guchi-apps/issue-deck) で設計・運用されている仕組みを移植したものである。設計の背景は issue-deck の `docs/multi-agent-workflow.md`、他リポジトリへの導入手順は `docs/cross-repo-setup-guide.md` を参照する。
 
 ローカル実行ではユーザー個人環境のグローバルルール（`~/.claude/CLAUDE.md`）と個人環境のスキルもあわせて読み込まれるが、GitHub Actions上での実行（`.github/workflows/claude-issue-dispatch.yml`など）はリポジトリをチェックアウトしたワークツリーしか参照できないため、それらは読み込まれない。したがってActions実行でも守られる必要があるルールは、このファイルか各ワークフローのプロンプトに明文化しておく必要がある。両方が読み込まれる環境で内容が矛盾する場合は、このファイルを優先する。
 
@@ -47,7 +47,7 @@ Issueごとの実装エージェントは、`npm version`系コマンド（`npm 
 
 ## 全アプリ共通の共有知識（shared context）
 
-複数アプリで再利用できる知識は、このリポジトリではなく共有知識リポジトリ（`m-guchi/docs`）で管理する。設計の全体像は`m-guchi/issue-deck`の`docs/shared-knowledge.md`を参照。
+複数アプリで再利用できる知識は、このリポジトリではなく共有知識リポジトリ（`guchi-apps/docs`）で管理する。設計の全体像は`guchi-apps/issue-deck`の`docs/shared-knowledge.md`を参照。
 
 ### 参照先
 
