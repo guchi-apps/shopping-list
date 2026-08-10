@@ -8,7 +8,7 @@ Notionの「🛒 買い物リスト」データベースと同期するPWA。ス
 - 本番ポート: `3101`（PM2）
 - 本番URL: `https://gucchii.com/shopping-list/`（新規サブドメインは作らず、portfolioが稼働中のルートドメイン配下にパスとして同居させる。`uptime-kuma-backup`＝`gucchii.com/internal/...` と同じパターン）
 
-構成・運用ルールは [m-guchi/docs](https://github.com/m-guchi/docs) の設計ガイドに準拠しています。
+構成・運用ルールは [guchi-apps/docs](https://github.com/guchi-apps/docs) の設計ガイドに準拠しています。
 
 ## Notionデータとのマッピング
 
@@ -45,7 +45,7 @@ npm run dev
 
 ### Issueごとのマルチエージェント運用
 
-Issueごとに専用ブランチ・git worktree・Claude Codeセッションを分離して実装する運用を導入しています（[m-guchi/issue-deck](https://github.com/m-guchi/issue-deck) の仕組みを移植したもの。運用ルールは [CLAUDE.md](CLAUDE.md)、設計の詳細は issue-deck の `docs/multi-agent-workflow.md` を参照）。
+Issueごとに専用ブランチ・git worktree・Claude Codeセッションを分離して実装する運用を導入しています（[guchi-apps/issue-deck](https://github.com/guchi-apps/issue-deck) の仕組みを移植したもの。運用ルールは [CLAUDE.md](CLAUDE.md)、設計の詳細は issue-deck の `docs/multi-agent-workflow.md` を参照）。
 
 ```bash
 # Issueごとにworktreeを作成し、実装エージェントのセッションを起動する
@@ -127,7 +127,7 @@ npm run version:major   # 0.1.0 → 1.0.0
 
 ### 7. Apache（既存ドメイン配下にパスとして追加）
 
-新規サブドメインは作らず、`gucchii.com`（portfolioの既存VirtualHost、HTTPS設定済み）に `/shopping-list` へのプロキシを追記する形にする（`m-guchi/docs` の `apache-domain-setup.md` にある「既存サイトのパス」パターン、`uptime-kuma-backup` と同じ）。
+新規サブドメインは作らず、`gucchii.com`（portfolioの既存VirtualHost、HTTPS設定済み）に `/shopping-list` へのプロキシを追記する形にする（`guchi-apps/docs` の `apache-domain-setup.md` にある「既存サイトのパス」パターン、`uptime-kuma-backup` と同じ）。
 
 1. portfolioの既存VirtualHost設定（`:443`）に以下を追記:
 
@@ -147,4 +147,4 @@ npm run version:major   # 0.1.0 → 1.0.0
 ### 8. 完了後
 
 - [ ] `main` へのデプロイでPWAが実機（iPhone）にインストールできるか確認
-- [ ] [m-guchi/vps](https://github.com/m-guchi/vps#アプリ一覧) の README にあるアプリ一覧に追加
+- [ ] [guchi-apps/vps](https://github.com/guchi-apps/vps#アプリ一覧) の README にあるアプリ一覧に追加
