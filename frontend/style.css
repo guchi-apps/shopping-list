@@ -204,7 +204,18 @@ input::placeholder, textarea::placeholder { color: rgba(43, 35, 32, 0.35); }
 .list {
   flex: 1;
   overflow-y: auto;
+  overflow-x: hidden;
   padding: 0 20px calc(110px + env(safe-area-inset-bottom));
+}
+
+.list-track {
+  display: flex;
+  width: 100%;
+}
+.list-track.dragging { transition: none; }
+
+.list-panel {
+  flex: 0 0 100%;
 }
 
 .section { margin-bottom: 20px; }
