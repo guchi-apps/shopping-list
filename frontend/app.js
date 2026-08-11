@@ -36,6 +36,7 @@ const el = {
   filterTabs: document.getElementById('filterTabs'),
   sortToggle: document.getElementById('sortToggle'),
   list: document.getElementById('list'),
+  listTrack: document.getElementById('listTrack'),
   fabAdd: document.getElementById('fabAdd'),
   addOverlay: document.getElementById('addOverlay'),
   addName: document.getElementById('addName'),
@@ -230,10 +231,22 @@ function renderFilterTabs() {
   for (const [key, label] of tabs) {
     const btn = document.createElement('button');
     btn.type = 'button';
+    btn.dataset.key = key;
     btn.className = 'tab-pill' + (state.filter === key ? ' active' : '');
     btn.textContent = `${label} ${counts[key] ?? 0}`;
     btn.addEventListener('click', () => { state.filter = key; render(); });
     el.filterTabs.appendChild(btn);
+  }
+}
+
+// カテゴリー一覧タブの並び順（すべて→各カテゴリー）。スワイプで隣に移動する順序と一致させる。
+function filterKeys() {
+  return ['all', ...state.categories.map((c) => c.name)];
+}
+
+function setActiveTabKey(key) {
+  for (const btn of el.filterTabs.children) {
+    btn.classList.toggle('active', btn.dataset.key === key);
   }
 }
 
@@ -270,19 +283,23 @@ function renderItemRow(item) {
   return row;
 }
 
-function renderList() {
-  el.list.innerHTML = '';
+function makeMessagePanel(message) {
+  const panel = document.createElement('div');
+  panel.className = 'list-panel';
+  const msg = document.createElement('div');
+  msg.className = 'state-message';
+  msg.textContent = message;
+  panel.appendChild(msg);
+  return panel;
+}
 
-  if (state.loading) {
-    el.list.innerHTML = '<div class="state-message">読み込み中…</div>';
-    return;
-  }
-  if (state.error) {
-    el.list.innerHTML = `<div class="state-message">${escapeHtml(state.error)}</div>`;
-    return;
-  }
+// filterKeyに対応する一覧の中身を構築する。スワイプ中は移動先カテゴリーの
+// プレビューを事前に描画するため、`state.filter`ではなく引数のfilterKeyで判定する。
+function buildListPanel(filterKey) {
+  const panel = document.createElement('div');
+  panel.className = 'list-panel';
 
-  const groups = state.filter === 'all' ? state.categories.map((c) => c.name) : [state.filter];
+  const groups = filterKey === 'all' ? state.categories.map((c) => c.name) : [filterKey];
 
   for (const category of groups) {
     const categoryItems = state.items.filter((it) => it.category === category);
@@ -291,7 +308,7 @@ function renderList() {
     const section = document.createElement('div');
     section.className = 'section';
 
-    if (state.filter === 'all') {
+    if (filterKey === 'all') {
       const header = document.createElement('div');
       header.className = 'section-header';
       header.textContent = `${category} · ${items.length}`;
@@ -310,7 +327,7 @@ function renderList() {
       section.appendChild(list);
     }
 
-    el.list.appendChild(section);
+    panel.appendChild(section);
   }
 
   if (state.items.some((it) => it.bought)) {
@@ -322,14 +339,180 @@ function renderList() {
       state.showBought = !state.showBought;
       render();
     });
-    el.list.appendChild(toggle);
+    panel.appendChild(toggle);
   }
+
+  return panel;
+}
+
+function renderList() {
+  cancelSwipe();
+  el.listTrack.style.transform = '';
+
+  if (state.loading) {
+    el.listTrack.replaceChildren(makeMessagePanel('読み込み中…'));
+    return;
+  }
+  if (state.error) {
+    el.listTrack.replaceChildren(makeMessagePanel(state.error));
+    return;
+  }
+
+  el.listTrack.replaceChildren(buildListPanel(state.filter));
 }
 
 function render() {
   renderFilterTabs();
   renderSortToggle();
   renderList();
+}
+
+// ---- swipe navigation between categories ----
+// このIssue（#92）の要件どおり、releaseした瞬間にまとめて切り替わるのではなく、
+// touchmoveのたびにtranslateXを更新して指の動きにそのまま追従させる。
+const SWIPE_COMMIT_RATIO = 0.4;
+
+const swipe = {
+  active: false,
+  dragging: false,
+  startX: 0,
+  startY: 0,
+  currentDx: 0,
+  direction: null, // 'next' | 'prev'
+  targetKey: null,
+  width: 0,
+};
+
+function cancelSwipe() {
+  swipe.active = false;
+  swipe.dragging = false;
+  swipe.direction = null;
+  swipe.targetKey = null;
+  swipe.currentDx = 0;
+  el.listTrack.classList.remove('dragging');
+  el.listTrack.style.transition = '';
+}
+
+function neighborFilterKey(direction) {
+  const keys = filterKeys();
+  const idx = keys.indexOf(state.filter);
+  if (idx === -1) return null;
+  const targetIdx = direction === 'next' ? idx + 1 : idx - 1;
+  return targetIdx >= 0 && targetIdx < keys.length ? keys[targetIdx] : null;
+}
+
+function startSwipeDrag(direction) {
+  swipe.dragging = true;
+  swipe.direction = direction;
+  swipe.targetKey = neighborFilterKey(direction);
+  el.listTrack.classList.add('dragging');
+
+  if (swipe.targetKey) {
+    const targetPanel = buildListPanel(swipe.targetKey);
+    if (direction === 'next') el.listTrack.appendChild(targetPanel);
+    else el.listTrack.insertBefore(targetPanel, el.listTrack.firstChild);
+  }
+}
+
+function updateSwipeDrag(dx) {
+  const width = swipe.width || 1;
+  let offset;
+  if (!swipe.targetKey) {
+    offset = dx * 0.3; // 隣のカテゴリーが無い端では抵抗のあるラバーバンド表現にする
+  } else if (swipe.direction === 'next') {
+    // dxが逆方向（開始位置より右）へ戻っても、隣接パネルの外側（空白）が
+    // 見えてしまわないようにドラッグ開始時の方向に応じた範囲でclampする
+    offset = Math.max(-width, Math.min(0, dx));
+  } else {
+    offset = Math.max(0, Math.min(width, dx));
+  }
+  swipe.currentDx = offset;
+
+  const baseOffset = swipe.targetKey && swipe.direction === 'prev' ? -width : 0;
+  el.listTrack.style.transform = `translateX(${baseOffset + offset}px)`;
+
+  if (swipe.targetKey) {
+    const progress = Math.min(1, Math.abs(offset) / width);
+    setActiveTabKey(progress >= SWIPE_COMMIT_RATIO ? swipe.targetKey : state.filter);
+  }
+}
+
+function finishSwipeDrag() {
+  const width = swipe.width || 1;
+  const commit = !!swipe.targetKey && Math.abs(swipe.currentDx) >= width * SWIPE_COMMIT_RATIO;
+  const direction = swipe.direction;
+  const targetKey = swipe.targetKey;
+
+  el.listTrack.classList.remove('dragging');
+  el.listTrack.style.transition = 'transform 0.22s ease';
+
+  let settled = false;
+  const settle = () => {
+    if (settled) return;
+    settled = true;
+    el.listTrack.removeEventListener('transitionend', settle);
+    el.listTrack.style.transition = '';
+    if (commit) {
+      state.filter = targetKey;
+      render();
+    } else {
+      setActiveTabKey(state.filter);
+      renderList();
+    }
+  };
+  el.listTrack.addEventListener('transitionend', settle);
+  setTimeout(settle, 260); // transitionendが発火しないケース（変化量ゼロ等）の保険
+
+  if (commit) {
+    const finalOffset = direction === 'next' ? -width : width;
+    el.listTrack.style.transform = `translateX(${finalOffset}px)`;
+  } else {
+    const baseOffset = targetKey && direction === 'prev' ? -width : 0;
+    el.listTrack.style.transform = `translateX(${baseOffset}px)`;
+  }
+
+  swipe.dragging = false;
+  swipe.direction = null;
+  swipe.targetKey = null;
+  swipe.currentDx = 0;
+}
+
+function initListSwipe() {
+  el.list.addEventListener('touchstart', (e) => {
+    if (state.loading || state.error || e.touches.length !== 1) return;
+    swipe.active = true;
+    swipe.dragging = false;
+    swipe.startX = e.touches[0].clientX;
+    swipe.startY = e.touches[0].clientY;
+    swipe.width = el.list.clientWidth;
+  }, { passive: true });
+
+  el.list.addEventListener('touchmove', (e) => {
+    if (!swipe.active || e.touches.length !== 1) return;
+    const dx = e.touches[0].clientX - swipe.startX;
+    const dy = e.touches[0].clientY - swipe.startY;
+
+    if (!swipe.dragging) {
+      if (Math.abs(dx) < 10 && Math.abs(dy) < 10) return;
+      if (Math.abs(dx) <= Math.abs(dy)) {
+        swipe.active = false; // 縦方向優勢なら通常のスクロールに任せる
+        return;
+      }
+      startSwipeDrag(dx < 0 ? 'next' : 'prev');
+    }
+
+    if (!swipe.dragging) return;
+    e.preventDefault();
+    updateSwipeDrag(dx);
+  }, { passive: false });
+
+  const endSwipe = () => {
+    if (!swipe.active) return;
+    swipe.active = false;
+    if (swipe.dragging) finishSwipeDrag();
+  };
+  el.list.addEventListener('touchend', endSwipe);
+  el.list.addEventListener('touchcancel', endSwipe);
 }
 
 // ---- item actions ----
@@ -635,6 +818,8 @@ function bindEvents() {
     state.sort = SORT_ORDER[(idx + 1) % SORT_ORDER.length];
     render();
   });
+
+  initListSwipe();
 
   el.fabAdd.addEventListener('click', openAdd);
   el.addClose.addEventListener('click', closeAdd);
