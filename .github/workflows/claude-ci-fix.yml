@@ -1,6 +1,6 @@
 name: Claude CI Fix
 
-# m-guchi/issue-deck の .github/workflows/claude-ci-fix.yml を移植したもの。
+# guchi-apps/issue-deck の .github/workflows/claude-ci-fix.yml を移植したもの。
 # 導入手順は issue-deck の docs/cross-repo-setup-guide.md を参照。
 # 以下のコメント中の #番号 は issue-deck 側のIssue番号を指す。
 #

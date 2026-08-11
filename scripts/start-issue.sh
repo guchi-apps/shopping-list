@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# m-guchi/issue-deck の scripts/start-issue.sh を移植したもの。
+# guchi-apps/issue-deck の scripts/start-issue.sh を移植したもの。
 #
 # Issueごとに専用ブランチ・git worktreeを作成し、実装エージェント用のClaude Codeセッションを起動する。
 #
@@ -27,7 +27,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 WORKTREE_BASE="${SHOPPING_LIST_WORKTREE_BASE:-$HOME/apps/shopping-list-worktrees}"
 PROMPT_TEMPLATE="$ROOT/scripts/prompts/implementation-agent.md"
 PROMPT_DIR="$WORKTREE_BASE/.prompts"
-REPO="m-guchi/shopping-list"
+REPO="guchi-apps/shopping-list"
 
 if [[ $# -eq 0 ]]; then
   echo "Usage: scripts/start-issue.sh <issue番号> [issue番号...]" >&2
@@ -206,7 +206,7 @@ PY
   rm -f "$issue_json_file"
 }
 
-# 全アプリ共通の共有知識リポジトリ（m-guchi/docs）をローカルにcloneしてある場合は、
+# 全アプリ共通の共有知識リポジトリ（guchi-apps/docs）をローカルにcloneしてある場合は、
 # --add-dir でworktree外のそのディレクトリも参照できるようにする（issue-deckの
 # docs/shared-knowledge.md「8. Claude Codeへのコンテキストの渡し方」）。cloneしていない
 # 環境でも起動できるよう、存在しない場合は --add-dir を付けずにそのまま起動する。

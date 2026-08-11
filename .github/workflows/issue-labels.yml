@@ -4,10 +4,10 @@ name: Issue Labels
 # 状態遷移を担うワークフローの、本リポジトリ側のトリガー定義。
 #
 # ジョブ本体は持たず、issue-deckの再利用可能ワークフローを参照する
-# (m-guchi/issue-deck#934・#940)。従来はワークフローをコピーして持っていたが、
+# (guchi-apps/issue-deck#934・#940)。従来はワークフローをコピーして持っていたが、
 # issue-deck側の改善を手でバックポートし続ける運用が対象リポジトリの増加に耐えないため、
 # 本体をissue-deckへ集約する方式へ移行した。導入手順は
-# m-guchi/issue-deck の docs/cross-repo-setup-guide.md「再利用可能ワークフローの参照」を参照。
+# guchi-apps/issue-deck の docs/cross-repo-setup-guide.md「再利用可能ワークフローの参照」を参照。
 #
 # 参照はタグ固定にする。@developを参照するとissue-deck側の不具合が即座に波及するため。
 # issue-deck自身だけがローカルパス参照で常に最新を使い、カナリアとして先に問題を検知する。
@@ -31,7 +31,7 @@ on:
 
 jobs:
   labels:
-    uses: m-guchi/issue-deck/.github/workflows/reusable-issue-labels.yml@workflows/v1
+    uses: guchi-apps/issue-deck/.github/workflows/reusable-issue-labels.yml@workflows/v7
     # 呼ばれる側の権限はcallerの付与範囲を超えられない。cleanup-on-closeジョブが
     # contents: write を要求するため、トップレベル相当の2つとあわせてここで付与する。
     # secrets: inherit は不要(secrets.GITHUB_TOKENは再利用可能ワークフローでも自動的に使える)。
@@ -39,3 +39,9 @@ jobs:
       issues: write
       pull-requests: write
       contents: write
+    # 進捗をissue-deckの報告API(POST /api/progress)へ送るための共有シークレット
+    # (guchi-apps/issue-deck#991 Phase 2)。organization secretとして解決される。
+    # secrets: inherit ではなく個別に渡し、呼ばれる側へ渡る秘密を最小限に保つ。
+    # 未設定でも報告ステップがスキップされるだけで、ラベル遷移には影響しない。
+    secrets:
+      PROGRESS_REPORT_SECRET: ${{ secrets.PROGRESS_REPORT_SECRET }}
