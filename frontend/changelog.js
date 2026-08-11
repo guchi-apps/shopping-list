@@ -1,8 +1,15 @@
 'use strict';
 
-const APP_VERSION = '0.6.2';
+const APP_VERSION = '0.7.0';
 
 const APP_CHANGELOG = [
+  {
+    version: '0.7.0',
+    date: '2026-08-11',
+    changes: [
+      'カテゴリー一覧を左右にスワイプして切り替えられるようにしました。指の動きに合わせて画面がそのまま追従します。',
+    ],
+  },
   {
     version: '0.6.2',
     date: '2026-08-11',
