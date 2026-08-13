@@ -30,14 +30,14 @@ on:
 
 jobs:
   review:
-    uses: guchi-apps/issue-deck/.github/workflows/reusable-claude-review-develop.yml@workflows/v14
+    uses: guchi-apps/issue-deck/.github/workflows/reusable-claude-review-develop.yml@workflows/v15
     with:
       dependency-check: any
       lock-files: "package-lock.json"
       risk-paths: |
         \.env\.tpl$ :: 環境変数テンプレートの変更 (**/*.env.tpl)
         ^deploy/|^scripts/update-env-file\.sh$ :: 本番環境の設定・シークレット注入スクリプトの変更 (deploy/**・scripts/update-env-file.sh)
-      prompts-ref: workflows/v14
+      prompts-ref: workflows/v15
     secrets: inherit
     permissions:
       contents: write
