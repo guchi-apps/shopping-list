@@ -4,3 +4,5 @@ node_modules/
 *.log
 .DS_Store
 .shared-context/
+# issue-deck側の実装プロンプトのcheckout先(prompts-ref指定時)。同じくリポジトリ管理外。
+.shared-prompts/
