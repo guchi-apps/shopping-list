@@ -1,8 +1,15 @@
 'use strict';
 
-const APP_VERSION = '0.7.2';
+const APP_VERSION = '0.7.3';
 
 const APP_CHANGELOG = [
+  {
+    version: '0.7.3',
+    date: '2026-08-14',
+    changes: [
+      '今回のリリースでは、画面や操作方法に変更はありません。デプロイ・CI基盤の内部的な整備のみを行いました。',
+    ],
+  },
   {
     version: '0.7.2',
     date: '2026-08-14',
