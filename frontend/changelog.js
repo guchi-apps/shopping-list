@@ -1,8 +1,15 @@
 'use strict';
 
-const APP_VERSION = '0.7.1';
+const APP_VERSION = '0.7.2';
 
 const APP_CHANGELOG = [
+  {
+    version: '0.7.2',
+    date: '2026-08-14',
+    changes: [
+      '今回のリリースは、デプロイ処理の安定性向上と、更新履歴の自動反映に関する不具合修正が中心で、画面上で新たに体感できる変更はありません。',
+    ],
+  },
   {
     version: '0.7.1',
     date: '2026-08-14',
