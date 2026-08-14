@@ -47,19 +47,30 @@ jobs:
     outputs:
       preview_url: ${{ steps.deploy.outputs.preview_url }}
 
+    # GitHub側の値をここで明示的に渡す。以前は実行のたびに1Passwordから読んで
+    # いたが、サービスアカウントの日次レート制限を使い切ってフリート全体の
+    # デプロイが止まった（guchi-apps/issue-deck#1302）。SERVER_*・SHARED_DB_*・
+    # SUPABASE_* はorganizationの共通値。
+    #
+    # このブロックは scripts/generate-workflow-env-block.sh で生成する（guchi-apps/issue-deck#1307）。
+    env:
+      HOST: ${{ secrets.SERVER_HOST }}
+      SSH_PORT: ${{ secrets.SERVER_SSH_PORT }}
+      SSH_PRIVATE_KEY: ${{ secrets.SERVER_SSH_PRIVATE_KEY }}
+      SUPABASE_PUBLISHABLE_KEY: ${{ vars.SUPABASE_PUBLISHABLE_KEY }}
+      SUPABASE_URL: ${{ vars.SUPABASE_PROJECT_URL }}
+      USERNAME: ${{ secrets.SERVER_USERNAME }}
+      ALLOWED_GOOGLE_EMAILS: ${{ secrets.ALLOWED_GOOGLE_EMAILS }}
+      FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+      NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
+      SIGNALY_WEBHOOK_URL: ${{ secrets.SIGNALY_WEBHOOK_URL }}
+      TARGET_DIR: ${{ secrets.TARGET_DIR }}
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
           ref: ${{ inputs.ref }}
-
-      - name: Load secrets from 1Password
-        uses: 1password/load-secrets-action@v4
-        with:
-          export-env: true
-        env:
-          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
-          OP_ENV_FILE: .github/deploy-preview.env.tpl
 
       - name: Setup flyctl
         uses: superfly/flyctl-actions/setup-flyctl@master
