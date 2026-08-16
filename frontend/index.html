@@ -74,6 +74,10 @@
     <div class="chip-group" id="addCategoryChips"></div>
     <div class="field-label">優先度</div>
     <div class="chip-group" id="addPriorityChips"></div>
+    <div class="field-label">いつまでに買う</div>
+    <div class="chip-group" id="addDueChips"></div>
+    <input type="date" class="input due-input" id="addDue" aria-label="期限の日付">
+    <p class="field-hint">期限を入れると、Notionの「Task」にも「〇〇を買う」として登録されます。</p>
     <button type="button" class="btn-primary" id="addSubmit">追加する</button>
   </div>
 </div>
@@ -90,6 +94,10 @@
     <div class="chip-group" id="editCategoryChips"></div>
     <div class="field-label">優先度</div>
     <div class="chip-group" id="editPriorityChips"></div>
+    <div class="field-label">いつまでに買う</div>
+    <div class="chip-group" id="editDueChips"></div>
+    <input type="date" class="input due-input" id="editDue" aria-label="期限の日付">
+    <p class="field-hint" id="editDueHint"></p>
     <div class="sheet-actions">
       <button type="button" class="btn-danger" id="editDelete">削除</button>
       <button type="button" class="btn-primary" id="editSave">保存する</button>
