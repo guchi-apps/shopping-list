@@ -4,6 +4,7 @@ const http = require('node:http');
 const fs = require('node:fs');
 const path = require('node:path');
 const notion = process.env.NOTION_STUB === '1' ? require('./notion-stub') : require('./notion');
+const taskSync = require('./task-sync');
 const { createVerifier } = require('./auth');
 
 const PORT = Number(process.env.PORT) || 3101;
@@ -11,6 +12,15 @@ const CI_AUTH_BYPASS_TOKEN = process.env.CI_AUTH_BYPASS_TOKEN || '';
 const NOTION_TOKEN = process.env.NOTION_TOKEN || '';
 const NOTION_DATA_SOURCE_ID =
   process.env.NOTION_DATA_SOURCE_ID || 'e011508b-b1b2-47aa-a604-178bf64158b8';
+// Notionの「☑️ Task」データソース。機密情報ではないため買い物リスト側と同じく既定値を持つ（#145）
+const NOTION_TASK_DATA_SOURCE_ID =
+  process.env.NOTION_TASK_DATA_SOURCE_ID || 'c8e9001c-d2a1-44c9-8ad7-cbe965fcc6d0';
+
+const taskSyncDeps = {
+  notion,
+  token: NOTION_TOKEN,
+  taskDataSourceId: NOTION_TASK_DATA_SOURCE_ID,
+};
 
 const SUPABASE_URL = process.env.SUPABASE_URL || '';
 const SUPABASE_PUBLISHABLE_KEY = process.env.SUPABASE_PUBLISHABLE_KEY || '';
@@ -91,6 +101,18 @@ function validatePriority(priority) {
   return priority === null || priority === undefined || notion.PRIORITY_LABELS.includes(priority);
 }
 
+// 期限は日付のみ（YYYY-MM-DD）。Notion側は時刻付きも扱えるが、買い物リストからは日付だけを送る。
+function validateDue(due) {
+  if (due === null || due === undefined || due === '') return true;
+  if (typeof due !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(due)) return false;
+  const date = new Date(`${due}T00:00:00Z`);
+  return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === due;
+}
+
+function normalizeDue(due) {
+  return due === '' ? null : due;
+}
+
 async function handleApi(req, res, pathname) {
   if (pathname === '/api/config' && req.method === 'GET') {
     return sendJson(res, 200, {
@@ -110,8 +132,10 @@ async function handleApi(req, res, pathname) {
   const categoryMatch = pathname.match(/^\/api\/categories\/([^/]+)$/);
 
   if (pathname === '/api/items' && req.method === 'GET') {
-    const items = await notion.listItems(NOTION_TOKEN, NOTION_DATA_SOURCE_ID);
-    return sendJson(res, 200, { items });
+    const listed = await notion.listItems(NOTION_TOKEN, NOTION_DATA_SOURCE_ID);
+    // 一覧を返すついでにNotionのタスクと突き合わせる（#145）。同期に失敗しても一覧は返す。
+    const { items, warning } = await taskSync.reconcileItems(taskSyncDeps, listed);
+    return sendJson(res, 200, { items, ...(warning ? { taskSyncWarning: warning } : {}) });
   }
 
   if (pathname === '/api/items' && req.method === 'POST') {
@@ -120,13 +144,16 @@ async function handleApi(req, res, pathname) {
     if (!name) return sendJson(res, 400, { error: 'name は必須です' });
     if (!(await validateCategory(body.category))) return sendJson(res, 400, { error: 'category が不正です' });
     if (!validatePriority(body.priority)) return sendJson(res, 400, { error: 'priority が不正です' });
-    const item = await notion.createItem(NOTION_TOKEN, NOTION_DATA_SOURCE_ID, {
+    if (!validateDue(body.due)) return sendJson(res, 400, { error: 'due が不正です（YYYY-MM-DD形式）' });
+    const created = await notion.createItem(NOTION_TOKEN, NOTION_DATA_SOURCE_ID, {
       name,
       category: body.category ?? null,
       memo: typeof body.memo === 'string' ? body.memo.trim() : '',
       priority: body.priority ?? null,
+      due: normalizeDue(body.due ?? null),
     });
-    return sendJson(res, 201, { item });
+    const { item, warning } = await taskSync.afterCreateItem(taskSyncDeps, created);
+    return sendJson(res, 201, { item, ...(warning ? { taskSyncWarning: warning } : {}) });
   }
 
   if (itemMatch && req.method === 'PATCH') {
@@ -142,12 +169,22 @@ async function handleApi(req, res, pathname) {
       if (!body.name) return sendJson(res, 400, { error: 'name を空にはできません' });
     }
     if (body.memo !== undefined) body.memo = String(body.memo).trim();
-    const item = await notion.updateItem(NOTION_TOKEN, itemMatch[1], body);
-    return sendJson(res, 200, { item });
+    if (body.due !== undefined) {
+      if (!validateDue(body.due)) return sendJson(res, 400, { error: 'due が不正です（YYYY-MM-DD形式）' });
+      body.due = normalizeDue(body.due);
+    }
+    // taskIdはNotionのrelationを指すサーバー側の管理項目のため、クライアントからは受け付けない
+    delete body.taskId;
+    const updated = await notion.updateItem(NOTION_TOKEN, itemMatch[1], body);
+    const { item, warning } = await taskSync.afterUpdateItem(taskSyncDeps, updated);
+    return sendJson(res, 200, { item, ...(warning ? { taskSyncWarning: warning } : {}) });
   }
 
   if (itemMatch && req.method === 'DELETE') {
+    const item = await notion.getItem(NOTION_TOKEN, itemMatch[1]);
+    const { warning } = await taskSync.beforeDeleteItem(taskSyncDeps, item);
     await notion.archiveItem(NOTION_TOKEN, itemMatch[1]);
+    if (warning) return sendJson(res, 200, { taskSyncWarning: warning });
     res.writeHead(204);
     return res.end();
   }

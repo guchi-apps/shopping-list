@@ -3,8 +3,8 @@
 const PRIORITIES = ['高', '中', '低'];
 const PRIORITY_CLASS = { 高: 'high', 中: 'mid', 低: 'low' };
 const PRIORITY_ORDER = { 高: 0, 中: 1, 低: 2 };
-const SORT_ORDER = ['added', 'name', 'priority'];
-const SORT_LABELS = { added: '追加順', name: '名前順', priority: '優先度順' };
+const SORT_ORDER = ['added', 'name', 'priority', 'due'];
+const SORT_LABELS = { added: '追加順', name: '名前順', priority: '優先度順', due: '期限順' };
 
 const state = {
   items: [],
@@ -14,9 +14,9 @@ const state = {
   showBought: false,
   loading: true,
   error: null,
-  addDraft: { name: '', memo: '', category: null, priority: null },
+  addDraft: { name: '', memo: '', category: null, priority: null, due: null },
   editId: null,
-  editDraft: { name: '', memo: '', category: null, priority: null },
+  editDraft: { name: '', memo: '', category: null, priority: null, due: null },
 };
 
 let labelsEditingId = null;
@@ -43,6 +43,8 @@ const el = {
   addMemo: document.getElementById('addMemo'),
   addCategoryChips: document.getElementById('addCategoryChips'),
   addPriorityChips: document.getElementById('addPriorityChips'),
+  addDueChips: document.getElementById('addDueChips'),
+  addDue: document.getElementById('addDue'),
   addSubmit: document.getElementById('addSubmit'),
   addClose: document.getElementById('addClose'),
   editOverlay: document.getElementById('editOverlay'),
@@ -50,6 +52,9 @@ const el = {
   editMemo: document.getElementById('editMemo'),
   editCategoryChips: document.getElementById('editCategoryChips'),
   editPriorityChips: document.getElementById('editPriorityChips'),
+  editDueChips: document.getElementById('editDueChips'),
+  editDue: document.getElementById('editDue'),
+  editDueHint: document.getElementById('editDueHint'),
   editSave: document.getElementById('editSave'),
   editDelete: document.getElementById('editDelete'),
   editClose: document.getElementById('editClose'),
@@ -76,6 +81,75 @@ function escapeHtml(str) {
   }[c]));
 }
 
+// ---- 期限（#145） ----
+// Notion側の「期限」は日付のみを扱う。toISOString()はUTCに寄って日付が1日ずれるため、
+// 端末のローカル日付でYYYY-MM-DDを組み立てる。
+function toIsoDate(date) {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
+function todayIso() {
+  return toIsoDate(new Date());
+}
+
+function shiftIso(days) {
+  const date = new Date();
+  date.setDate(date.getDate() + days);
+  return toIsoDate(date);
+}
+
+// 今週末＝直近の土曜日。土日はその日自身を指す。
+function weekendIso() {
+  const date = new Date();
+  const day = date.getDay();
+  if (day === 0 || day === 6) return toIsoDate(date);
+  date.setDate(date.getDate() + (6 - day));
+  return toIsoDate(date);
+}
+
+function daysUntil(due) {
+  const [y, m, d] = due.split('-').map(Number);
+  const target = new Date(y, m - 1, d);
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  return Math.round((target - today) / 86400000);
+}
+
+function formatDueShort(due) {
+  const [, m, d] = due.split('-').map(Number);
+  return `${m}/${d}`;
+}
+
+// 一覧に出すバッジの文言と強調度。期限を過ぎたもの・今日のものだけを強く見せる。
+function dueBadge(due) {
+  if (!due) return null;
+  const diff = daysUntil(due);
+  if (diff < 0) return { label: `${formatDueShort(due)}`, cls: 'overdue', title: `期限 ${due}（${-diff}日超過）` };
+  if (diff === 0) return { label: '今日', cls: 'today', title: `期限 ${due}` };
+  if (diff === 1) return { label: '明日', cls: 'soon', title: `期限 ${due}` };
+  if (diff <= 7) return { label: formatDueShort(due), cls: 'soon', title: `期限 ${due}` };
+  return { label: formatDueShort(due), cls: 'later', title: `期限 ${due}` };
+}
+
+function dueChipOptions() {
+  const options = [
+    { value: null, label: 'なし' },
+    { value: todayIso(), label: '今日' },
+    { value: shiftIso(1), label: '明日' },
+    { value: weekendIso(), label: '今週末' },
+  ];
+  // 金曜は「明日」と「今週末」が同じ日になる。同じ日付のチップが2つ選択状態になるのを避ける。
+  const seen = new Set();
+  return options.filter((opt) => {
+    if (seen.has(opt.value)) return false;
+    seen.add(opt.value);
+    return true;
+  });
+}
+
 // ---- API ----
 async function apiRequest(path, options) {
   const headers = {
@@ -99,12 +173,18 @@ async function apiRequest(path, options) {
   return res.json();
 }
 
-const fetchItems = () => apiRequest('api/items').then((d) => d.items);
+// 期限を入れた項目はNotionのタスクとも同期する。同期にだけ失敗した場合、
+// レスポンスに taskSyncWarning が入るため、呼び出し側で本文ごと受け取ってトーストに出す（#145）。
+const fetchItems = () => apiRequest('api/items');
 const createItemApi = (input) =>
-  apiRequest('api/items', { method: 'POST', body: JSON.stringify(input) }).then((d) => d.item);
+  apiRequest('api/items', { method: 'POST', body: JSON.stringify(input) });
 const updateItemApi = (id, input) =>
-  apiRequest(`api/items/${id}`, { method: 'PATCH', body: JSON.stringify(input) }).then((d) => d.item);
+  apiRequest(`api/items/${id}`, { method: 'PATCH', body: JSON.stringify(input) });
 const deleteItemApi = (id) => apiRequest(`api/items/${id}`, { method: 'DELETE' });
+
+function notifyTaskSyncWarning(payload) {
+  if (payload?.taskSyncWarning) showToast(payload.taskSyncWarning);
+}
 
 const fetchCategories = () => apiRequest('api/categories').then((d) => d.categories);
 const createCategoryApi = (name) =>
@@ -215,6 +295,14 @@ function sortItems(items) {
     arr.sort((a, b) => a.name.localeCompare(b.name, 'ja'));
   } else if (state.sort === 'priority') {
     arr.sort((a, b) => (PRIORITY_ORDER[a.priority] ?? 3) - (PRIORITY_ORDER[b.priority] ?? 3));
+  } else if (state.sort === 'due') {
+    // 期限が近い順。期限なしは末尾へ回す
+    arr.sort((a, b) => {
+      if (!a.due && !b.due) return 0;
+      if (!a.due) return 1;
+      if (!b.due) return -1;
+      return a.due < b.due ? -1 : a.due > b.due ? 1 : 0;
+    });
   }
   arr.sort((a, b) => (a.bought === b.bought ? 0 : a.bought ? 1 : -1));
   return arr;
@@ -262,6 +350,14 @@ function priorityDotHtml(priority) {
   return `<span class="priority-dot ${cls}" title="優先度: ${priority}"></span>`;
 }
 
+function dueBadgeHtml(item) {
+  const badge = dueBadge(item.due);
+  if (!badge) return '';
+  // 購入済みの行では期限の強調をやめる（もう急ぐ必要がないため）
+  const cls = item.bought ? 'done' : badge.cls;
+  return `<span class="due-badge ${cls}" title="${escapeHtml(badge.title)}">${escapeHtml(badge.label)}</span>`;
+}
+
 function renderItemRow(item) {
   const row = document.createElement('div');
   row.className = 'item-row';
@@ -272,6 +368,7 @@ function renderItemRow(item) {
       <div class="item-name ${item.bought ? 'bought' : ''}"></div>
       ${item.memo ? '<div class="item-memo"></div>' : ''}
     </div>
+    ${dueBadgeHtml(item)}
   `;
   row.querySelector('.item-name').textContent = item.name;
   if (item.memo) row.querySelector('.item-memo').textContent = item.memo;
@@ -521,7 +618,7 @@ async function toggleBought(item) {
   item.bought = !prev;
   render();
   try {
-    await updateItemApi(item.id, { bought: item.bought });
+    notifyTaskSyncWarning(await updateItemApi(item.id, { bought: item.bought }));
   } catch (err) {
     item.bought = prev;
     render();
@@ -553,6 +650,7 @@ const categoryChipOptions = () => state.categories.map((c) => ({ value: c.name, 
 function renderAddSheet() {
   el.addName.value = state.addDraft.name;
   el.addMemo.value = state.addDraft.memo;
+  el.addDue.value = state.addDraft.due ?? '';
   renderChipGroup(el.addCategoryChips, categoryChipOptions(), state.addDraft.category, (v) => {
     state.addDraft.category = v;
     renderAddSheet();
@@ -561,10 +659,14 @@ function renderAddSheet() {
     state.addDraft.priority = v;
     renderAddSheet();
   });
+  renderChipGroup(el.addDueChips, dueChipOptions(), state.addDraft.due, (v) => {
+    state.addDraft.due = v;
+    renderAddSheet();
+  });
 }
 
 function openAdd() {
-  state.addDraft = { name: '', memo: '', category: state.categories[0]?.name ?? null, priority: null };
+  state.addDraft = { name: '', memo: '', category: state.categories[0]?.name ?? null, priority: null, due: null };
   el.addOverlay.hidden = false;
   renderAddSheet();
   el.addName.focus();
@@ -577,14 +679,15 @@ async function submitAdd() {
   const name = el.addName.value.trim();
   if (!name) { el.addName.focus(); return; }
   const memo = el.addMemo.value.trim();
-  const { category, priority } = state.addDraft;
+  const { category, priority, due } = state.addDraft;
   el.addSubmit.disabled = true;
   try {
-    const item = await createItemApi({ name, memo, category, priority });
-    state.items.push(item);
+    const payload = await createItemApi({ name, memo, category, priority, due });
+    state.items.push(payload.item);
     closeAdd();
     render();
-    showToast('追加しました');
+    showToast(due ? '追加しました（タスクにも登録しました）' : '追加しました');
+    notifyTaskSyncWarning(payload);
   } catch (err) {
     showToast(err.message);
   } finally {
@@ -596,6 +699,7 @@ async function submitAdd() {
 function renderEditSheet() {
   el.editName.value = state.editDraft.name;
   el.editMemo.value = state.editDraft.memo;
+  el.editDue.value = state.editDraft.due ?? '';
   renderChipGroup(el.editCategoryChips, categoryChipOptions(), state.editDraft.category, (v) => {
     state.editDraft.category = v;
     renderEditSheet();
@@ -604,6 +708,15 @@ function renderEditSheet() {
     state.editDraft.priority = v;
     renderEditSheet();
   });
+  renderChipGroup(el.editDueChips, dueChipOptions(), state.editDraft.due, (v) => {
+    state.editDraft.due = v;
+    renderEditSheet();
+  });
+  // 期限を外すとタスクも消える点は、消してから気付くと取り返しがつかないため事前に示す
+  const hadDue = !!findItem(state.editId)?.due;
+  el.editDueHint.textContent = hadDue && !state.editDraft.due
+    ? '期限を「なし」にすると、Notionのタスクも削除されます。'
+    : '期限を入れると、Notionの「Task」にも「〇〇を買う」として登録されます。';
 }
 
 function openEdit(id) {
@@ -615,6 +728,7 @@ function openEdit(id) {
     memo: item.memo || '',
     category: item.category,
     priority: item.priority,
+    due: item.due ?? null,
   };
   el.editOverlay.hidden = false;
   renderEditSheet();
@@ -629,15 +743,16 @@ async function submitEditSave() {
   const name = el.editName.value.trim();
   if (!name) { el.editName.focus(); return; }
   const memo = el.editMemo.value.trim();
-  const { category, priority } = state.editDraft;
+  const { category, priority, due } = state.editDraft;
   el.editSave.disabled = true;
   try {
-    const updated = await updateItemApi(id, { name, memo, category, priority });
+    const payload = await updateItemApi(id, { name, memo, category, priority, due });
     const idx = state.items.findIndex((it) => it.id === id);
-    if (idx !== -1) state.items[idx] = updated;
+    if (idx !== -1) state.items[idx] = payload.item;
     closeEdit();
     render();
     showToast('保存しました');
+    notifyTaskSyncWarning(payload);
   } catch (err) {
     showToast(err.message);
   } finally {
@@ -648,14 +763,19 @@ async function submitEditSave() {
 async function submitEditDelete() {
   const id = state.editId;
   if (!id) return;
-  if (!(await confirmDialog('このアイテムを削除しますか？'))) return;
+  const hasTask = !!findItem(id)?.due;
+  const message = hasTask
+    ? 'このアイテムを削除しますか？（Notionのタスクも削除されます）'
+    : 'このアイテムを削除しますか？';
+  if (!(await confirmDialog(message))) return;
   el.editDelete.disabled = true;
   try {
-    await deleteItemApi(id);
+    const payload = await deleteItemApi(id);
     state.items = state.items.filter((it) => it.id !== id);
     closeEdit();
     render();
     showToast('削除しました');
+    notifyTaskSyncWarning(payload);
   } catch (err) {
     showToast(err.message);
   } finally {
@@ -827,6 +947,10 @@ function bindEvents() {
   el.addSubmit.addEventListener('click', submitAdd);
   el.addName.addEventListener('input', () => { state.addDraft.name = el.addName.value; });
   el.addMemo.addEventListener('input', () => { state.addDraft.memo = el.addMemo.value; });
+  el.addDue.addEventListener('change', () => {
+    state.addDraft.due = el.addDue.value || null;
+    renderAddSheet();
+  });
 
   el.editClose.addEventListener('click', closeEdit);
   el.editOverlay.addEventListener('click', (e) => { if (e.target === el.editOverlay) closeEdit(); });
@@ -834,6 +958,10 @@ function bindEvents() {
   el.editDelete.addEventListener('click', submitEditDelete);
   el.editName.addEventListener('input', () => { state.editDraft.name = el.editName.value; });
   el.editMemo.addEventListener('input', () => { state.editDraft.memo = el.editMemo.value; });
+  el.editDue.addEventListener('change', () => {
+    state.editDraft.due = el.editDue.value || null;
+    renderEditSheet();
+  });
 
   el.versionBadge.addEventListener('click', () => {
     closeProfileMenu();
@@ -890,10 +1018,11 @@ async function loadItems() {
   state.error = null;
   render();
   try {
-    const [items, categories] = await Promise.all([fetchItems(), fetchCategories()]);
-    state.items = items;
+    const [itemsPayload, categories] = await Promise.all([fetchItems(), fetchCategories()]);
+    state.items = itemsPayload.items;
     state.categories = categories;
     state.loading = false;
+    notifyTaskSyncWarning(itemsPayload);
   } catch (err) {
     state.loading = false;
     if (err.status === 401 || err.status === 403) {

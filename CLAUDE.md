@@ -140,7 +140,7 @@ Issueごとの実装エージェントは、`npm version`系コマンド（`npm 
 - 本番環境の設定（`deploy/`・`scripts/update-env-file.sh`）
 - GitHub Actionsやデプロイ設定（`.github/workflows/`）
 - Secretsや環境変数（`.env.tpl`・`.github/*.env.tpl`）
-- Notion APIとの連携仕様の変更（`backend/notion.js`のデータソースID・プロパティマッピング）
+- Notion APIとの連携仕様の変更（`backend/notion.js`のデータソースID・プロパティマッピング、`backend/task-sync.js`の同期ルール。後者はNotionの「☑️ Task」データベースを書き換えるため、買い物リスト以外のデータへ影響が及ぶ）
 - 課金・決済
 - 依存関係の追加（このリポジトリでは依存パッケージの追加自体が方針変更にあたる）
 - `develop`→`main`のマージ
