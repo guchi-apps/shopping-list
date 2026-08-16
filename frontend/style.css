@@ -592,6 +592,16 @@ input::placeholder, textarea::placeholder { color: rgba(43, 35, 32, 0.35); }
 .changelog-entry .changelog-version { font-size: 15px; font-weight: 800; color: var(--ink); }
 .changelog-entry .changelog-date { font-size: 12px; color: var(--ink-45); margin-bottom: 6px; }
 .changelog-entry ul { margin: 0; padding-left: 18px; font-size: 14px; color: var(--ink); }
+.changelog-usage {
+  margin-top: 10px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--ink-05);
+  border: 1px solid var(--ink-10);
+}
+.changelog-usage-title { font-size: 12px; font-weight: 800; color: var(--ink-55); margin-bottom: 6px; }
+.changelog-usage ol { margin: 0; padding-left: 18px; font-size: 14px; color: var(--ink); }
+.changelog-usage ol li + li { margin-top: 4px; }
 
 .toast {
   position: fixed;
