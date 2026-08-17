@@ -27,8 +27,20 @@
 
 * { box-sizing: border-box; }
 
+/* スクロールは .list（と各モーダル）の中だけに閉じ込め、ページ自体は動かさない。
+   これが無いと、リストが短くスクロールの余地が無いときにタッチ操作が親へ連鎖し、
+   モバイルブラウザのバウンスでヘッダーごと画面が上下に動いて見える（#78） */
+html {
+  height: 100dvh;
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+
 body {
   margin: 0;
+  height: 100dvh;
+  overflow: hidden;
+  overscroll-behavior: none;
   background: var(--bg);
   font-family: -apple-system, system-ui, sans-serif;
   color: var(--ink);
@@ -50,7 +62,9 @@ input::placeholder, textarea::placeholder { color: rgba(43, 35, 32, 0.35); }
 .app[hidden] { display: none; }
 
 .login-screen {
-  min-height: 100dvh;
+  /* bodyがスクロールしないぶん、縦の短い画面ではここでスクロールできるようにする（#78） */
+  height: 100%;
+  overflow-y: auto;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -209,6 +223,8 @@ input::placeholder, textarea::placeholder { color: rgba(43, 35, 32, 0.35); }
   flex: 1;
   overflow-y: auto;
   overflow-x: hidden;
+  /* スクロール端に達しても親へ伝播させない（#78） */
+  overscroll-behavior: contain;
   padding: 0 20px calc(110px + env(safe-area-inset-bottom));
 }
 
@@ -383,6 +399,8 @@ input::placeholder, textarea::placeholder { color: rgba(43, 35, 32, 0.35); }
   box-shadow: 0 -8px 30px rgba(0, 0, 0, 0.15);
   max-height: 85dvh;
   overflow-y: auto;
+  /* シート内のスクロールが背後の画面へ抜けないようにする（#78） */
+  overscroll-behavior: contain;
 }
 
 .sheet-header {
@@ -592,6 +610,16 @@ input::placeholder, textarea::placeholder { color: rgba(43, 35, 32, 0.35); }
 .changelog-entry .changelog-version { font-size: 15px; font-weight: 800; color: var(--ink); }
 .changelog-entry .changelog-date { font-size: 12px; color: var(--ink-45); margin-bottom: 6px; }
 .changelog-entry ul { margin: 0; padding-left: 18px; font-size: 14px; color: var(--ink); }
+.changelog-usage {
+  margin-top: 10px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--ink-05);
+  border: 1px solid var(--ink-10);
+}
+.changelog-usage-title { font-size: 12px; font-weight: 800; color: var(--ink-55); margin-bottom: 6px; }
+.changelog-usage ol { margin: 0; padding-left: 18px; font-size: 14px; color: var(--ink); }
+.changelog-usage ol li + li { margin-top: 4px; }
 
 .toast {
   position: fixed;

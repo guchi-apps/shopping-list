@@ -45,6 +45,8 @@ GitHub Actions上の無人実行では、その場で確認を取る相手がい
 
 Issueごとの実装エージェントは、`npm version`系コマンド（`npm run version:patch`等）を実行せず、`package.json`のversionフィールドと`frontend/changelog.js`を変更しない。かつては個々の実装コミットでもこれらを更新していたが、上記ワークフローがリリース単位でまとめて生成する方式に一本化したため廃止した（#55）。
 
+生成物の受け取りは`"version"` lifecycleスクリプト（`scripts/version-changelog.mjs`）が担い、共有ワークフローから2つの環境変数を受け取る。`RELEASE_CHANGELOG`（何が変わったか）は`changes`へ、`RELEASE_USAGE`（どう使うか＝どこを開く/何を押す/どうなれば成功か）は`usage`へ入り、`frontend/changelog.js`の各エントリは`version` / `date` / `changes` / `usage`の4項目になる（#150）。`usage`は画面で使える変化が無いリリースでは空文字で渡るため項目ごと出力されず、更新履歴の画面（`frontend/app.js`の`openChangelog`）でも存在するときだけ変更点の下に「使い方」として番号付きで表示する。したがって`usage`は常にあるものとして参照しない。
+
 ## 全アプリ共通の共有知識（shared context）
 
 複数アプリで再利用できる知識は、このリポジトリではなく共有知識リポジトリ（`guchi-apps/docs`）で管理する。設計の全体像は`guchi-apps/issue-deck`の`docs/shared-knowledge.md`を参照。

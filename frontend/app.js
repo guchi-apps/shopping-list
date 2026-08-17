@@ -793,10 +793,20 @@ function openChangelog() {
     const block = document.createElement('div');
     block.className = 'changelog-entry';
     const items = entry.changes.map((c) => `<li>${escapeHtml(c)}</li>`).join('');
+    // 使い方（usage）は「どう使うか」で、変更点とは読む場面が違うため変更点の下に別枠で出す。
+    // 画面で使える変化が無いリリースでは項目自体が無いため、その場合は見出しごと出さない。
+    const usageItems = (entry.usage ?? []).map((u) => `<li>${escapeHtml(u)}</li>`).join('');
+    const usageBlock = usageItems
+      ? `<div class="changelog-usage">
+          <div class="changelog-usage-title">使い方</div>
+          <ol>${usageItems}</ol>
+        </div>`
+      : '';
     block.innerHTML = `
       <div class="changelog-version">v${escapeHtml(entry.version)}</div>
       <div class="changelog-date">${escapeHtml(entry.date)}</div>
       <ul>${items}</ul>
+      ${usageBlock}
     `;
     el.changelogList.appendChild(block);
   }
