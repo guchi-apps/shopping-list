@@ -53,7 +53,7 @@ on:
 
 jobs:
   conflict-resolve:
-    uses: guchi-apps/issue-deck/.github/workflows/reusable-claude-conflict-resolve.yml@workflows/v22
+    uses: guchi-apps/issue-deck/.github/workflows/reusable-claude-conflict-resolve.yml@workflows/v23
     with:
       runtime-setup: node
       package-manager: npm
@@ -62,7 +62,7 @@ jobs:
       # プロンプトの「- 解消後、」に続けてそのまま埋め込まれるため、文末まで含めて1行で書く。
       verify-commands: "`npm run check`（`node --check`による構文チェック）を実行し、問題がないことを確認する（このリポジトリにはテスト・ビルド・型チェックは存在しない）"
       # 上の uses: と同じタグを指定する。
-      prompts-ref: workflows/v22
+      prompts-ref: workflows/v23
     secrets: inherit
     permissions:
       contents: write
