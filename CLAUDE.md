@@ -35,7 +35,10 @@ GitHub Actions上の無人実行では、その場で確認を取る相手がい
 
 ### シークレットの扱い
 
-- APIキー・トークン・パスワード等の実シークレットをリポジトリにコミットしない。コミットしてよいのは、1Passwordの`op://vault/item/field`形式の参照だけを書いたテンプレート（`.env.tpl`・`.github/ci.env.tpl`・`.github/deploy.env.tpl`）に限る。実値は`.gitignore`済みの`.env`と1Password側にのみ置く。
+- APIキー・トークン・パスワード等の実シークレットをリポジトリにコミットしない。コミットしてよいのは、1Passwordの`op://vault/item/field`形式の参照だけを書いたファイル（`.env.tpl`・`.github/secrets-manifest.tsv`）に限る。実値は`.gitignore`済みの`.env`と1Password側にのみ置く。
+- **GitHub Actionsは実行時に1Passwordを読まない。** CI・デプロイ・プレビューの値はGitHubのsecret / variableから`env:`で受け取る。1Passwordサービスアカウントの日次レート制限（1Passwordアカウント全体で1,000リクエスト/日。サービスアカウントを分けても分割されない）を使い切ってフリート全体のデプロイが止まったため移行した（guchi-apps/issue-deck#1302・#129）。ワークフローに`1password/load-secrets-action`や`op://`参照を新たに足さない。
+  - GitHub側の名前と1Password上の正の対応は`.github/secrets-manifest.tsv`が持つ。`SCOPE`が`inherit`の行はorganizationの共通値のため同期しない。値が変わったときだけ`scripts/sync-github-secrets.sh`（またはActionsの`Sync secrets`）で同期する。
+  - `.env.tpl`は**ローカル開発専用**。`op run` / `op inject`で実値を注入する用途にのみ使い、ワークフローからは参照しない。
 - 実シークレットの値を、コミットメッセージ・PR本文・Issueコメント・ワークフローのログなど、リポジトリやGitHub上に残る場所へ出力しない。
 - 既存のシークレット・環境変数の設定変更が必要になった場合は、自動で進めず`00.check-user`を付与してユーザーの確認を待つ（後述の「自動マージ不可カテゴリ」にも該当する）。
 
@@ -143,7 +146,7 @@ Issueごとの実装エージェントは、`npm version`系コマンド（`npm 
 - 認証・認可（`backend/auth.js`・`frontend/auth.js`・`frontend/auth/`）
 - 本番環境の設定（`deploy/`・`scripts/update-env-file.sh`）
 - GitHub Actionsやデプロイ設定（`.github/workflows/`）
-- Secretsや環境変数（`.env.tpl`・`.github/*.env.tpl`）
+- Secretsや環境変数（`.env.tpl`・`.github/secrets-manifest.tsv`）
 - Notion APIとの連携仕様の変更（`backend/notion.js`のデータソースID・プロパティマッピング、`backend/task-sync.js`の同期ルール。後者はNotionの「☑️ Task」データベースを書き換えるため、買い物リスト以外のデータへ影響が及ぶ）
 - 課金・決済
 - 依存関係の追加（このリポジトリでは依存パッケージの追加自体が方針変更にあたる）

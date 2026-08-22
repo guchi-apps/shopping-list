@@ -29,7 +29,7 @@
    - UIに関わる変更は、必要に応じて `npm run dev` を起動して目視確認する（本体リポジトリのポートは既定で3101。同時に他のworktreeで起動している場合は衝突しないよう注意する）
 3. 自動マージ不可カテゴリに該当するか判定する（`CLAUDE.md`の「自動マージ不可カテゴリ」と対応）
    - 対象カテゴリ: 認証・認可／本番環境の設定／GitHub Actionsやデプロイ設定／Secretsや環境変数／Notion APIとの連携仕様の変更／課金・決済／依存関係の追加
-   - 一次判定（機械的）: `git diff --name-only develop...HEAD` のパスが `**/auth/**`（`backend/auth.js`・`frontend/auth.js`・`frontend/auth/`）・`.env*`・`**/*.env.tpl`・`.github/workflows/**`・`deploy/**`・`scripts/update-env-file.sh`・`package.json`の依存関係の追加/メジャー更新等に該当するか
+   - 一次判定（機械的）: `git diff --name-only develop...HEAD` のパスが `**/auth/**`（`backend/auth.js`・`frontend/auth.js`・`frontend/auth/`）・`.env*`・`**/*.env.tpl`・`.github/secrets-manifest.tsv`・`.github/workflows/**`・`deploy/**`・`scripts/update-env-file.sh`・`package.json`の依存関係の追加/メジャー更新等に該当するか
    - 二次判定（意味的）: パスパターンに引っかからなくても、diffの内容自体が上記カテゴリに実質該当しないか読解して判断する。特にNotion連携仕様（`backend/notion.js`のデータソースID・プロパティマッピング）はパスパターンで判定していないため、この二次判定が主になる
 4. 該当する場合
    - マージしない
