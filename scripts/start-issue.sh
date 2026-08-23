@@ -6,6 +6,10 @@
 # 使い方:
 #   scripts/start-issue.sh <issue番号> [issue番号...]
 #
+# 環境変数:
+#   ISSUE_DECK_SKIP_LAN_SETUP  0以外ならLANアクセス設定（Windowsの管理者権限＝UACが必要）を行わない
+#   ISSUE_DECK_DEV_PORT_BASE   開発サーバーのポートのベース値（issue-deck側の受け口が渡す）
+#
 # 前提:
 #   - gh コマンドで認証済みであること
 #   - op（1Password CLI）にログイン済みであること（worktreeの .env を生成するため。
@@ -18,6 +22,13 @@
 #   - スクリーンショット（24.screenshot-required）は本リポジトリでは未対応のため、
 #     撮影を指示せず画面プレビューでの確認へ倒す（#6 で対応予定）
 #
+# issue-deckの「ローカル起動プロトコル」のマーカー行（# issue-deck-local-session: vN）は
+# 意図的に宣言していない。宣言すると issue-deck 側の受け口の判定が汎用ランチャー
+# （generic-start-issue.sh）からこのスクリプトへ切り替わり、汎用ランチャーが持つtmux出口・
+# 11.local の付与・進捗報告を失うため（issue-deck#1224・#99。詳細は CLAUDE.md）。
+# ただしプロトコルが要求する環境変数（上記2つ）とworktreeの再利用には従っているので、
+# 宣言したくなったら残りの約束（tmux出口など）を足すだけでよい。
+#
 # 本体リポジトリの作業ツリー（ブランチ・uncommitted changes）には一切触れない。
 # develop の最新化は git fetch のみで行い、git worktree add で新しいブランチ・作業ディレクトリを作る。
 
@@ -25,6 +36,26 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 WORKTREE_BASE="${SHOPPING_LIST_WORKTREE_BASE:-$HOME/apps/shopping-list-worktrees}"
+
+# LANアクセス設定（setup-lan-access.sh）は `Start-Process -Verb RunAs -Wait` でWindowsの管理者権限の
+# プロセスを待つ。issue-deckの画面から起動した場合、UACを承認して中の処理が成功しても待ちから
+# 戻らずタブが固まるため、呼び出し側がこの環境変数で抑止できるようにする（issue-deck#1076）。
+# ターミナルから直接叩いた場合（未設定＝0）の挙動は変えない。
+SKIP_LAN_SETUP="${ISSUE_DECK_SKIP_LAN_SETUP:-0}"
+
+# 開発サーバーのポートは「ベース値 + Issue番号」。どのリポジトリがどの帯を使うかは定義上
+# どのリポジトリ単独でも決められないため、全リポジトリを知るissue-deck側が対応表
+# （scripts/local-repo-ports.conf）を持ち、起動時にこの環境変数で渡してくる。
+# ターミナルから直接叩く経路では渡ってこないため、既定値も自リポジトリの帯に揃えておく
+# （揃えないと同じIssueでも起動経路によって別のポートになる）。
+# guchi-apps/shopping-list の帯は7000。元は4000でissue-deckと完全に衝突しており、
+# 一度5000へ移す案だったが、issue-deckが4000〜5999を占める扱いになったため7000になった
+# （issue-deck#1224）。
+DEV_PORT_BASE="${ISSUE_DECK_DEV_PORT_BASE:-7000}"
+if [[ ! "$DEV_PORT_BASE" =~ ^[0-9]+$ ]]; then
+  echo "Error: ISSUE_DECK_DEV_PORT_BASE は数字で指定してください: $DEV_PORT_BASE" >&2
+  exit 1
+fi
 PROMPT_TEMPLATE="$ROOT/scripts/prompts/implementation-agent.md"
 PROMPT_DIR="$WORKTREE_BASE/.prompts"
 REPO="guchi-apps/shopping-list"
@@ -65,9 +96,28 @@ prepare_issue() {
   WORKTREE_DIR="$WORKTREE_BASE/issue-$n"
   PROMPT_FILE="$PROMPT_DIR/issue-$n.md"
 
+  # 既存のworktreeは作り直さず再利用する（一度閉じたセッションに戻れるようにするため）。
+  # ただしworktreeとして壊れている場合や別ブランチを開いている場合は、意図しない場所で
+  # 作業を続けることになるため止める。
+  local reuse_worktree=0
   if [[ -e "$WORKTREE_DIR" ]]; then
-    echo "Error: $WORKTREE_DIR は既に存在します（issue #$n は起動済みの可能性があります）。" >&2
-    exit 1
+    if ! git -C "$WORKTREE_DIR" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+      echo "Error: $WORKTREE_DIR はgitの作業ツリーではありません。中身を確認して削除してください。" >&2
+      exit 1
+    fi
+    local current_branch
+    current_branch="$(git -C "$WORKTREE_DIR" branch --show-current)"
+    if [[ "$current_branch" != "issue-$n" ]]; then
+      echo "Error: $WORKTREE_DIR が開いているのは issue-$n ではなく ${current_branch:-(デタッチHEAD)} です。" >&2
+      exit 1
+    fi
+    reuse_worktree=1
+    echo "#$n: 既存のworktreeを再利用します（$WORKTREE_DIR）。"
+    local dirty_count
+    dirty_count="$(git -C "$WORKTREE_DIR" status --porcelain | wc -l)"
+    if [[ "$dirty_count" -gt 0 ]]; then
+      echo "#$n: 未コミットの変更が $dirty_count 件あります。前回の続きから作業してください。"
+    fi
   fi
 
   echo "#$n: Issue内容を取得しています..."
@@ -77,21 +127,26 @@ prepare_issue() {
     exit 1
   fi
 
-  echo "#$n: develop を最新化しています..."
-  git -C "$ROOT" fetch origin develop
+  if [[ "$reuse_worktree" -eq 0 ]]; then
+    echo "#$n: develop を最新化しています..."
+    git -C "$ROOT" fetch origin develop
 
-  echo "#$n: worktree・ブランチ issue-$n を作成しています..."
-  if ! git -C "$ROOT" worktree add "$WORKTREE_DIR" -b "issue-$n" origin/develop; then
-    echo "Error: worktree/ブランチの作成に失敗しました（ブランチ issue-$n が既に存在する可能性があります）。" >&2
-    exit 1
+    echo "#$n: worktree・ブランチ issue-$n を作成しています..."
+    if ! git -C "$ROOT" worktree add "$WORKTREE_DIR" -b "issue-$n" origin/develop; then
+      echo "Error: worktree/ブランチの作成に失敗しました（ブランチ issue-$n が既に存在する可能性があります）。" >&2
+      exit 1
+    fi
   fi
 
   # 開発サーバーのポートをIssueごとに一意にする（複数worktreeで同時に起動しても衝突しないように）。
-  DEV_PORT=$((4000 + n))
+  DEV_PORT=$((DEV_PORT_BASE + n))
 
   # 環境変数（.env）を用意する。本体に .env があればコピーし、無ければ1Password CLIで生成する。
   # symlinkではなくコピーとし、将来worktreeごとに値を変える余地を残す。
-  if [[ -f "$ROOT/.env" ]]; then
+  # 再開時は既存の .env を尊重する（ローカルで書き換えている場合があるため）。無いときだけ用意する。
+  if [[ -f "$WORKTREE_DIR/.env" ]]; then
+    echo "#$n: 既存の $WORKTREE_DIR/.env をそのまま使います。"
+  elif [[ -f "$ROOT/.env" ]]; then
     cp "$ROOT/.env" "$WORKTREE_DIR/.env"
     echo "#$n: 本体の .env をコピーしました。"
   elif command -v op >/dev/null 2>&1; then
@@ -109,15 +164,19 @@ prepare_issue() {
   echo "#$n: 開発サーバーはポート $DEV_PORT を使用します（http://localhost:$DEV_PORT）"
   echo "#$n: Googleログインが必須のため、Supabaseの Redirect URLs に http://localhost:$DEV_PORT/auth/callback 相当が登録されている必要があります。"
 
-  echo "#$n: LANアクセス用のポートフォワーディングを設定しています（Windowsの管理者権限が必要です）..."
   SSLIP_URL=""
-  if bash "$ROOT/scripts/setup-lan-access.sh" "$DEV_PORT"; then
-    WSL_IP="$(ip -4 addr show eth0 2>/dev/null | grep -oP '(?<=inet\s)\d+(\.\d+){3}' || true)"
-    if [[ -n "$WSL_IP" ]]; then
-      SSLIP_URL="http://${WSL_IP}.sslip.io:${DEV_PORT}"
-    fi
+  if [[ "$SKIP_LAN_SETUP" != "0" ]]; then
+    echo "#$n: LANアクセス設定はスキップします（LAN内の別端末から見る場合は scripts/setup-lan-access.sh $DEV_PORT を実行してください）。"
   else
-    echo "#$n: 警告: LANアクセス設定に失敗しました。localhostでの確認は引き続き可能です。" >&2
+    echo "#$n: LANアクセス用のポートフォワーディングを設定しています（Windowsの管理者権限が必要です）..."
+    if bash "$ROOT/scripts/setup-lan-access.sh" "$DEV_PORT"; then
+      WSL_IP="$(ip -4 addr show eth0 2>/dev/null | grep -oP '(?<=inet\s)\d+(\.\d+){3}' || true)"
+      if [[ -n "$WSL_IP" ]]; then
+        SSLIP_URL="http://${WSL_IP}.sslip.io:${DEV_PORT}"
+      fi
+    else
+      echo "#$n: 警告: LANアクセス設定に失敗しました。localhostでの確認は引き続き可能です。" >&2
+    fi
   fi
 
   echo "#$n: 起動用プロンプトを生成しています..."
