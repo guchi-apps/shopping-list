@@ -79,7 +79,8 @@ scripts/start-reviewer.sh
 ```
 
 - worktreeは本体リポジトリの外（`~/apps/shopping-list-worktrees/issue-<番号>/`）に作成されます。本体（`~/apps/shopping-list`）は常に `develop` の最新チェックアウトとして空けておく運用です
-- 開発サーバーのポートはIssueごとに `4000 + Issue番号` が自動で割り当てられ、worktreeの `.env` に書き込まれます（複数Issueを同時に起動しても衝突しません）
+- 開発サーバーのポートはIssueごとに `7000 + Issue番号` が自動で割り当てられ、worktreeの `.env` に書き込まれます（複数Issueを同時に起動しても衝突しません）
+- 既にworktreeがある場合は作り直さず再利用します（一度閉じたセッションに戻れます）。`.env` も既にあるものをそのまま使います
 - Googleログインが必須のため、割り当てられたポートの `/auth/callback` がSupabaseの Redirect URLs に登録されている必要があります
 - GitHub上では、Issueへ `@claude` とコメントすることで同等の実装フローを無人実行することもできます（`.github/workflows/claude-issue-dispatch.yml`）。ローカルのスクリプトは、対話しながら進めたい場合・実機で画面を確認したい場合に使います
 
