@@ -79,7 +79,8 @@ scripts/start-reviewer.sh
 ```
 
 - worktreeは本体リポジトリの外（`~/apps/shopping-list-worktrees/issue-<番号>/`）に作成されます。本体（`~/apps/shopping-list`）は常に `develop` の最新チェックアウトとして空けておく運用です
-- 開発サーバーのポートはIssueごとに `4000 + Issue番号` が自動で割り当てられ、worktreeの `.env` に書き込まれます（複数Issueを同時に起動しても衝突しません）
+- 開発サーバーのポートはIssueごとに `7000 + Issue番号` が自動で割り当てられ、worktreeの `.env` に書き込まれます（複数Issueを同時に起動しても衝突しません）
+- 既にworktreeがある場合は作り直さず再利用します（一度閉じたセッションに戻れます）。`.env` も既にあるものをそのまま使います
 - Googleログインが必須のため、割り当てられたポートの `/auth/callback` がSupabaseの Redirect URLs に登録されている必要があります
 - GitHub上では、Issueへ `@claude` とコメントすることで同等の実装フローを無人実行することもできます（`.github/workflows/claude-issue-dispatch.yml`）。ローカルのスクリプトは、対話しながら進めたい場合・実機で画面を確認したい場合に使います
 
@@ -100,6 +101,30 @@ npm run version:major   # 0.1.0 → 1.0.0
 ```
 
 実行後、`frontend/changelog.js` の `changes` の中身を編集してからコミットしてください。リリースコミットのメッセージは `v0.2.0 をリリースする。` のように統一します。
+
+## シークレットの取得先（1Password → GitHub）
+
+**GitHub Actions（CI・デプロイ・プレビュー）は実行時に1Passwordを読みません。** GitHubのsecret / variableに置いた値を各ワークフローの `env:` で受け取ります。1Passwordサービスアカウントの日次レート制限（**1Passwordアカウント全体で1,000リクエスト/日**。サービスアカウントを分けても分割されない）を使い切り、フリート全体のデプロイが止まったためです（[guchi-apps/issue-deck#1302](https://github.com/guchi-apps/issue-deck/issues/1302)・#129）。
+
+1Passwordは引き続き「人が管理する唯一の正」で、値が変わったときだけGitHubへ同期します。
+
+| 場所 | 役割 |
+|---|---|
+| 1Password（`apps` ボールト） | 実値の唯一の正 |
+| `.github/secrets-manifest.tsv` | 「GitHub側の名前 ↔ 1Password上の正」の対応表 |
+| `scripts/sync-github-secrets.sh` | マニフェストに従って1Password → GitHubへ同期する |
+| `.env.tpl` | **ローカル開発専用。** `op run` / `op inject` で実値を注入する |
+
+マニフェストの `SCOPE` 列が `inherit` の6件（`SERVER_*`・`SUPABASE_*`）はorganizationの共通値をそのまま使うため同期しません。残り5件（`ALLOWED_GOOGLE_EMAILS`・`FLY_API_TOKEN`・`NOTION_TOKEN`・`SIGNALY_WEBHOOK_URL`・`TARGET_DIR`）がこのリポジトリのrepository secretです。
+
+```bash
+eval $(op signin)                            # 個人アカウント。サービスアカウントの枠を消費しない
+scripts/sync-github-secrets.sh --dry-run
+scripts/sync-github-secrets.sh
+scripts/sync-github-secrets.sh --only NOTION_TOKEN
+```
+
+GitHubの画面（Actions → Sync secrets）からも `workflow_dispatch` で起動できます（`.github/workflows/sync-secrets.yml`）。同期に使う `OP_SERVICE_ACCOUNT_TOKEN` はorganization secretから継承するため、このリポジトリに登録する必要はありません。
 
 ## セットアップ・デプロイ チェックリスト（ユーザー側作業）
 
@@ -138,7 +163,7 @@ npm run version:major   # 0.1.0 → 1.0.0
 
 - [ ] リポジトリを作成し、このディレクトリの内容をpush
 - [ ] デフォルトブランチを `develop` に設定
-- [ ] Settings → Secrets and variables → Actions に `OP_SERVICE_ACCOUNT_TOKEN`（`apps`ボールト読み取り権限を持つ1Password Service Account）を登録
+- [ ] repository secretを投入（`scripts/sync-github-secrets.sh`。organizationの共通値・`OP_SERVICE_ACCOUNT_TOKEN` は継承されるため登録不要。前項「シークレットの取得先」を参照）
 - [ ] `ci.yml` を一度実行してジョブ名をGitHubに認識させる
 - [ ] `main` のBranch protectionを設定（PR必須化 + `lint` ジョブを必須ステータスチェックに追加 + Bypassは自分のアカウントを *For pull requests only*）
 

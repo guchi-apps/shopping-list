@@ -35,7 +35,10 @@ GitHub Actions上の無人実行では、その場で確認を取る相手がい
 
 ### シークレットの扱い
 
-- APIキー・トークン・パスワード等の実シークレットをリポジトリにコミットしない。コミットしてよいのは、1Passwordの`op://vault/item/field`形式の参照だけを書いたテンプレート（`.env.tpl`・`.github/ci.env.tpl`・`.github/deploy.env.tpl`）に限る。実値は`.gitignore`済みの`.env`と1Password側にのみ置く。
+- APIキー・トークン・パスワード等の実シークレットをリポジトリにコミットしない。コミットしてよいのは、1Passwordの`op://vault/item/field`形式の参照だけを書いたファイル（`.env.tpl`・`.github/secrets-manifest.tsv`）に限る。実値は`.gitignore`済みの`.env`と1Password側にのみ置く。
+- **GitHub Actionsは実行時に1Passwordを読まない。** CI・デプロイ・プレビューの値はGitHubのsecret / variableから`env:`で受け取る。1Passwordサービスアカウントの日次レート制限（1Passwordアカウント全体で1,000リクエスト/日。サービスアカウントを分けても分割されない）を使い切ってフリート全体のデプロイが止まったため移行した（guchi-apps/issue-deck#1302・#129）。ワークフローに`1password/load-secrets-action`や`op://`参照を新たに足さない。
+  - GitHub側の名前と1Password上の正の対応は`.github/secrets-manifest.tsv`が持つ。`SCOPE`が`inherit`の行はorganizationの共通値のため同期しない。値が変わったときだけ`scripts/sync-github-secrets.sh`（またはActionsの`Sync secrets`）で同期する。
+  - `.env.tpl`は**ローカル開発専用**。`op run` / `op inject`で実値を注入する用途にのみ使い、ワークフローからは参照しない。
 - 実シークレットの値を、コミットメッセージ・PR本文・Issueコメント・ワークフローのログなど、リポジトリやGitHub上に残る場所へ出力しない。
 - 既存のシークレット・環境変数の設定変更が必要になった場合は、自動で進めず`00.check-user`を付与してユーザーの確認を待つ（後述の「自動マージ不可カテゴリ」にも該当する）。
 
@@ -87,7 +90,10 @@ Issueごとの実装エージェントは、`npm version`系コマンド（`npm 
 - Issue単位の作業ブランチは`develop`から作成し、ブランチ名は`issue-<Issue番号>`とする（例: `issue-123`）。この命名規則にワークフロー側のIssue番号特定処理が依存しているため、従わないブランチは全ワークフローの対象外になる。
 - worktreeは本体リポジトリの外（`~/apps/shopping-list-worktrees/<ブランチ名>/`）に作成する。本体（`~/apps/shopping-list`）は常に`develop`の最新チェックアウトとして空けておく（レビュー・統合エージェント用）。
 - ローカルでIssueごとのセッションを起動する場合は`scripts/start-issue.sh <Issue番号>`を使う（worktree作成・`.env`の用意・ポート割り当て・LANアクセス設定・プロンプト生成までを行う）。レビュー・統合エージェントは`scripts/start-reviewer.sh`で起動する。
-- 開発サーバーのポートはIssueごとに`4000 + Issue番号`を割り当てる（例: issue-12 → 4012）。`scripts/start-issue.sh`がworktreeの`.env`へ自動設定するため、複数Issueのworktreeで同時に起動しても衝突しない。Googleログインが必須のため、そのポートの`/auth/callback`がSupabaseのRedirect URLsに登録されている必要がある。
+- 開発サーバーのポートはIssueごとに`7000 + Issue番号`を割り当てる（例: issue-12 → 7012）。`scripts/start-issue.sh`がworktreeの`.env`へ自動設定するため、複数Issueのworktreeで同時に起動しても衝突しない。Googleログインが必須のため、そのポートの`/auth/callback`がSupabaseのRedirect URLsに登録されている必要がある。
+- **ポート帯（ベース値）はリポジトリ単独では決められない。** どのリポジトリがどの帯を使うかの正はissue-deck側の`scripts/local-repo-ports.conf`が持ち、起動時に環境変数`ISSUE_DECK_DEV_PORT_BASE`で渡ってくる。`scripts/start-issue.sh`はこれを尊重し、渡ってこない経路（ターミナル直叩き）では既定値7000を使う。7000という値自体は同じ表から来ている（元は4000でissue-deckと完全に衝突していた。一度5000へ移す案だったが、issue-deckが4000〜5999を占める扱いになったため7000。issue-deck#1224・#99）。ここを変えるときは対応表側と必ず揃える。
+- `scripts/start-issue.sh`は環境変数`ISSUE_DECK_SKIP_LAN_SETUP`が`0`以外ならLANアクセス設定（`scripts/setup-lan-access.sh`）を行わない。WSL以外では元々何もしないスクリプトだが、Windowsの管理者権限プロセスの終了待ちが戻らず固まる経路があるため、呼び出し側が抑止できるようにしている（issue-deck#1076）。
+- issue-deckの画面・サブPCのpollerからこのリポジトリのセッションを起動する経路では、**issue-deck側の汎用ランチャー（`scripts/generic-start-issue.sh`）が使われる**。`scripts/start-issue.sh`はターミナルから直接叩く経路のためのもので、issue-deckの「ローカル起動プロトコル」のマーカー行（`# issue-deck-local-session: vN`）は**意図的に宣言していない**。宣言すると受け口（`local-repo-resolve.sh`）の判定が汎用ランチャーからこのリポジトリの`scripts/start-issue.sh`へ切り替わり、汎用ランチャーが持つtmux出口・`11.local`の付与・進捗報告を失うため（issue-deck#1224・#99）。宣言する場合は、それらを自前で実装したうえで行う。
 
 ### 実装エージェント（Issueごとに起動するセッション）の禁止事項
 
@@ -143,7 +149,7 @@ Issueごとの実装エージェントは、`npm version`系コマンド（`npm 
 - 認証・認可（`backend/auth.js`・`frontend/auth.js`・`frontend/auth/`）
 - 本番環境の設定（`deploy/`・`scripts/update-env-file.sh`）
 - GitHub Actionsやデプロイ設定（`.github/workflows/`）
-- Secretsや環境変数（`.env.tpl`・`.github/*.env.tpl`）
+- Secretsや環境変数（`.env.tpl`・`.github/secrets-manifest.tsv`）
 - Notion APIとの連携仕様の変更（`backend/notion.js`のデータソースID・プロパティマッピング、`backend/task-sync.js`の同期ルール。後者はNotionの「☑️ Task」データベースを書き換えるため、買い物リスト以外のデータへ影響が及ぶ）
 - 課金・決済
 - 依存関係の追加（このリポジトリでは依存パッケージの追加自体が方針変更にあたる）
