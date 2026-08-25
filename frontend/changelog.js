@@ -1,8 +1,15 @@
 'use strict';
 
-const APP_VERSION = '0.9.3';
+const APP_VERSION = '0.9.4';
 
 const APP_CHANGELOG = [
+  {
+    version: '0.9.4',
+    date: '2026-08-25',
+    changes: [
+      'ここに変更内容を記載',
+    ],
+  },
   {
     version: '0.9.3',
     date: '2026-08-24',
