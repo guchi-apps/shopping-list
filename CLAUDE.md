@@ -1,5 +1,14 @@
 # shopping-list 固有ルール
 
+> [!IMPORTANT]
+> **このアプリは2026-08-28に運用を終了した（#188）。**
+>
+> Dayspanへ機能を集約したため、本番（`https://gucchii.com/shopping-list/`・PM2プロセス `shopping-list`）は停止し、このリポジトリはアーカイブされる。
+>
+> - 新規の機能追加・不具合修正・デプロイは行わない。以降の変更は原則受け付けない。
+> - 撤去の全手順と実行順序は [README.md「運用終了の記録（#188）」](README.md#運用終了の記録188) にある。VPS・issue-deck・外部サービス側の作業はこのリポジトリでは完結しないため、それぞれのリポジトリのIssueかユーザーの手作業で行う。
+> - 以下の記述は運用当時のもので、リポジトリの構成や過去の経緯を読むための記録として残している。
+
 このリポジトリで作業するClaude Codeエージェント向けのルールを記載する。
 
 Issueごとの複数Claude Codeエージェント運用（`@claude`コメント起点の計画〜実装〜PR作成〜レビュー〜マージまでの無人実行）は、[guchi-apps/issue-deck](https://github.com/guchi-apps/issue-deck) で設計・運用されている仕組みを移植したものである。設計の背景は issue-deck の `docs/multi-agent-workflow.md`、他リポジトリへの導入手順は `docs/cross-repo-setup-guide.md` を参照する。
@@ -117,6 +126,8 @@ Issueごとの実装エージェントは、`npm version`系コマンド（`npm 
 - 承認待ちの合図には`00.check-user`ラベルを使う。
 
 ### Issueラベルの状態遷移
+
+**進捗ラベル（`01.planning`〜`09.main`）はこのリポジトリから削除済みで、現在は付与できない**（#188で確認）。進捗はGitHub ProjectsのStatusが唯一の正になったため、issue-deck側が`scripts/remove-progress-labels.sh`でラベル定義そのものを消した。以下は当時の遷移の記録であり、`gh issue edit --add-label 02.wip`のような操作は`'02.wip' not found`で失敗する。`00.check-user`・`21.plan-required`等の条件系ラベルは残っている。
 
 マルチエージェント運用で進めるIssueは、原則として以下の順でラベルが遷移する。
 
