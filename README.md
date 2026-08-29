@@ -1,5 +1,16 @@
 # 買い物リスト
 
+> [!IMPORTANT]
+> **このアプリは2026-08-28に運用を終了しました。**
+>
+> - 機能を [Dayspan](https://github.com/guchi-apps/dayspan) へ集約したため、このアプリを個別に動かす必要が無くなりました。
+> - 本番URL `https://gucchii.com/shopping-list/` は停止します。VPS上の常駐プロセス（PM2 `shopping-list`）とApacheのプロキシ設定も撤去します。
+> - このリポジトリはアーカイブし、以降の機能追加・デプロイは行いません。
+> - **データは失われません。** このアプリはDBを持たずNotionを唯一の情報源としているため、買い物リストの中身はNotionの「🛒 買い物リスト」データベースにそのまま残ります。期限の入力で作られた「☑️ Task」データベースのタスクも残り、Dayspanからそのまま扱えます。
+> - スマートフォンのホーム画面に追加したPWAは、Service Workerのキャッシュから開けてしまうため手動で削除してください（バックエンド停止後はデータの読み書きができません）。
+>
+> 撤去の全手順と実行順序は末尾の「[運用終了の記録（#188）](#運用終了の記録188)」に残しています。以下の記述は運用当時のものです。
+
 Notionの「🛒 買い物リスト」データベースと同期するPWA。スマホのホーム画面に追加して、Notionのデータをその場で見る・チェックする・追加する用途を想定しています。
 
 - フロントエンド: Vanilla JS PWA（ビルド不要、`frontend/`）。`@supabase/supabase-js`はCDN（esm.sh）から動的importで読み込む
@@ -196,3 +207,58 @@ GitHubの画面（Actions → Sync secrets）からも `workflow_dispatch` で�
 
 - [ ] `main` へのデプロイでPWAが実機（iPhone）にインストールできるか確認
 - [ ] [guchi-apps/vps](https://github.com/guchi-apps/vps#アプリ一覧) の README にあるアプリ一覧に追加
+
+## 運用終了の記録（#188）
+
+Dayspanへ機能を集約したため、2026-08-28にこのアプリの運用を終了した。撤去対象は次の5系統に分かれ、このリポジトリで完結するのは A（ドキュメントの告知）だけである。
+
+| 系統 | 対象 | 実施場所 |
+|---|---|---|
+| A. このリポジトリ | `README.md`・`CLAUDE.md` への運用終了の明記 | #188 のPull Request |
+| B. VPS実機 | PM2プロセス削除・デプロイ先ディレクトリ削除・Apache reload | [guchi-apps/vps](https://github.com/guchi-apps/vps) のIssue |
+| C. vpsリポジトリ | Apacheの `/shopping-list/` プロキシ設定・READMEのアプリ一覧 | 同上 |
+| D. issue-deck | ポート帯対応表・対応リポジトリ一覧の更新 | [guchi-apps/issue-deck](https://github.com/guchi-apps/issue-deck) のIssue |
+| E. 外部サービス・GitHub | Supabase Redirect URLs・1Password・Notion Integration・リポジトリのアーカイブ | ユーザーの手作業 |
+
+### 実行順序
+
+**GitHubのアーカイブは必ず最後に行う。** アーカイブするとIssue・PR・ラベルがすべて読み取り専用になり、残作業のコメントもIssueのクローズもできなくなるため。
+
+1. #188 のPull Requestを `develop` へマージする
+2. `develop` → `main` の反映は任意。本番を止めるためデプロイの実益は無いが、アーカイブ時に `main` を最新に揃えたい場合のみ `release-develop-to-main.yml` を patch で流す（**アーカイブ前に済ませる**）
+3. B・C（vpsリポジトリのIssue）で本番を停止する
+4. D（issue-deckのIssue）でローカルセッション用の登録を整理する
+5. E のうち外部サービス（Supabase・1Password・Notion）を整理する
+6. subpcローカルの `~/apps/shopping-list`・`~/apps/shopping-list-worktrees` を削除する
+7. #188 をクローズしてから `gh repo archive guchi-apps/shopping-list` を実行する
+
+### B. VPS実機
+
+```bash
+# 先にApache側からプロキシを外してからプロセスを落とす（順序を逆にすると502が出る）
+sudo apachectl configtest && sudo systemctl reload apache2
+
+pm2 delete shopping-list
+pm2 save
+
+# デプロイ先ディレクトリ（GitHub secretの TARGET_DIR。/apps/shopping-list/）を削除する
+```
+
+### C. vpsリポジトリ
+
+- `apache/sites-available/gucchii-le-ssl.conf` から `/shopping-list` に関する3行（`RedirectMatch ^/shopping-list$` / `ProxyPass /shopping-list/` / `ProxyPassReverse /shopping-list/`）を削除する
+- `README.md` のアプリ一覧から `shopping-list` の行を削除する
+- `docs/tips.md` の「PM2配下（Next.jsアプリ群・shopping-listバックエンド）」という説明文からこのアプリへの言及を外す
+
+### D. issue-deck
+
+- `scripts/local-repo-ports.conf` の `guchi-apps/shopping-list 7000` は、**行を削除せずコメント化して7000帯を予約したまま残す。** 削除すると後続アプリへ同じ帯が払い出され、手元に残っているworktreeの開発サーバーと衝突しうるため
+- `docs/supported-repositories.md` に運用終了を追記し、共有ワークフローの配布対象・ドリフト検査の対象から外す
+- 無人ワークフローの停止に個別の作業は要らない。issue-deckはGitHubの `archived` フラグを同期し（`src/lib/github/repository-sync.ts`）、各sweepが `archived: false` で対象を絞る（`src/lib/github/progress-sweep-run.ts` ほか）ため、リポジトリをアーカイブすれば自動的に対象から外れる
+
+### E. 外部サービス
+
+- **Supabase**（他アプリと共有のプロジェクト）: Redirect URLsから `https://gucchii.com/shopping-list/auth/callback`・`http://localhost:3101/auth/callback`・ローカルセッション用の `http://localhost:71xx/auth/callback` を削除する。共有プロジェクトなので、他アプリのURLを消さないよう1件ずつ確認する
+- **1Password**: `apps/shopping-list` のアイテム（`notion-token`・`allowed-google-emails`・`target-dir`）を削除する
+- **Notion**: 「🛒 買い物リスト」データベース自体は残す（データの一次情報源のため）。Integrationの接続を外す場合は shopping-list 専用のトークンに限り、**Dayspanが使っているIntegrationと同一でないか確認してから外す**。「☑️ Task」データベースはDayspanが使い続けるため接続を外さない
+- **GitHub**: repository secret / variable はアーカイブで凍結されるため削除不要。Fly.ioのプレビュー用アプリ（`issue-deck-preview`）はissue-deckとの共用のため、こちらで削除するものは無い

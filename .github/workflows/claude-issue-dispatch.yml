@@ -43,7 +43,7 @@ on:
 
 jobs:
   dispatch:
-    uses: guchi-apps/issue-deck/.github/workflows/reusable-issue-dispatch.yml@workflows/v27
+    uses: guchi-apps/issue-deck/.github/workflows/reusable-issue-dispatch.yml@workflows/v28
     with:
       runtime-setup: minimal
       package-manager: npm
@@ -51,7 +51,7 @@ jobs:
       post-implement-script: scripts/ci-post-implement.sh
       # 上の uses: と同じタグを指定する。片方だけ上げると新しいワークフローで
       # 古いプロンプトが使われる。
-      prompts-ref: workflows/v27
+      prompts-ref: workflows/v28
     secrets: inherit
     # 呼ばれる側の権限はcallerの付与範囲を超えられない。
     permissions:

@@ -1,6 +1,6 @@
 {
   "name": "shopping-list",
-  "version": "0.9.5",
+  "version": "0.9.6",
   "private": true,
   "description": "Notionの買い物リストと同期するPWA",
   "scripts": {
