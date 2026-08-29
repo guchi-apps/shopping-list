@@ -1,8 +1,15 @@
 'use strict';
 
-const APP_VERSION = '0.9.5';
+const APP_VERSION = '0.9.6';
 
 const APP_CHANGELOG = [
+  {
+    version: '0.9.6',
+    date: '2026-08-29',
+    changes: [
+      'このアプリの運用終了についてご案内します。機能はDayspanに統合されたため、本アプリの提供は終了しました。これまで買い物リストに登録した内容は失われません（Notionのデータベースにそのまま残ります）。',
+    ],
+  },
   {
     version: '0.9.5',
     date: '2026-08-27',
